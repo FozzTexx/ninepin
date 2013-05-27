@@ -1,0 +1,1 @@
+cmd_/home/fozztexx/source/ninepin/iec/iec.ko := ld -EL -r  -T /usr/src/linux/scripts/module-common.lds --build-id  -o /home/fozztexx/source/ninepin/iec/iec.ko /home/fozztexx/source/ninepin/iec/iec.o /home/fozztexx/source/ninepin/iec/iec.mod.o
