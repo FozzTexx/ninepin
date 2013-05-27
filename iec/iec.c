@@ -1,85 +1,86 @@
-#include <linux/module.h>
-#include <linux/kernel.h>
 #include <linux/init.h>
-
+#include <linux/module.h>
+#include <linux/kernel.h> /* printk() */
+#include <linux/slab.h> /* kmalloc() */
+#include <linux/fs.h> /* everything... */
+#include <linux/errno.h> /* error codes */
+#include <linux/types.h> /* size_t */
+#include <linux/proc_fs.h>
+#include <linux/fcntl.h> /* O_ACCMODE */
+#include <asm/system.h> /* cli(), *_flags */
+#include <asm/uaccess.h> /* copy_from/to_user */
 #include <linux/interrupt.h>
 #include <linux/gpio.h>
 
+#define DRIVER_AUTHOR	"Chris Osborn <fozztexx@fozztexx.com>"
+#define DRIVER_DESC	"Commodore IEC serial driver"
 
-#define DRIVER_AUTHOR "Igor <hardware.coder@gmail.com>"
-#define DRIVER_DESC   "Tnterrupt Test"
+#define IEC_ATN		25
+#define IEC_CLK		8
+#define IEC_DATA	7
 
-// we want GPIO_17 (pin 11 on P5 pinout raspberry pi rev. 2 board)
-// to generate interrupt
-#define GPIO_ANY_GPIO                17
+#define IEC_DESC	"Clock pin for CBM IEC"
+#define DEVICE_DESC	"some_device"
 
-// text below will be seen in 'cat /proc/interrupt' command
-#define GPIO_ANY_GPIO_DESC           "Some gpio pin description"
+short int iec_irq = 0;
+int iec_major = 60;
+char *iec_buffer;
 
-// below is optional, used in more complex code, in our case, this could be
-// NULL
-#define GPIO_ANY_GPIO_DEVICE_DESC    "some_device"
+int iec_open(struct inode *inode, struct file *filp);
+int iec_close(struct inode *inode, struct file *filp);
+ssize_t iec_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos);
+ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos);
+
+struct file_operations iec_fops = {
+ read: iec_read,
+ write: iec_write,
+ open: iec_open,
+ release: iec_close
+};
+
+static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs) {
+  unsigned long flags;
 
 
-/****************************************************************************/
-/* Interrupts variables block                                               */
-/****************************************************************************/
-short int irq_any_gpio    = 0;
+  // disable hard interrupts (remember them in flag 'flags')
+  local_irq_save(flags);
 
+  printk(KERN_NOTICE "Interrupt [%d] for device %s was triggered !.\n",
+	 irq, (char *) dev_id);
 
-/****************************************************************************/
-/* IRQ handler - fired on interrupt                                         */
-/****************************************************************************/
-static irqreturn_t r_irq_handler(int irq, void *dev_id, struct pt_regs *regs) {
+  // restore hard interrupts
+  local_irq_restore(flags);
 
-   unsigned long flags;
-
-   // disable hard interrupts (remember them in flag 'flags')
-   local_irq_save(flags);
-
-   printk(KERN_NOTICE "Interrupt [%d] for device %s was triggered !.\n",
-          irq, (char *) dev_id);
-
-   // restore hard interrupts
-   local_irq_restore(flags);
-
-   return IRQ_HANDLED;
+  return IRQ_HANDLED;
 }
 
+void iec_config(void) {
+  if (gpio_request(IEC_CLK, IEC_DESC)) {
+    printk("GPIO request faiure: %s\n", IEC_DESC);
+    return;
+  }
 
-/****************************************************************************/
-/* This function configures interrupts.                                     */
-/****************************************************************************/
-void r_int_config(void) {
+  if ((iec_irq = gpio_to_irq(IEC_CLK)) < 0) {
+    printk("GPIO to IRQ mapping faiure %s\n", IEC_DESC);
+    return;
+  }
 
-   if (gpio_request(GPIO_ANY_GPIO, GPIO_ANY_GPIO_DESC)) {
-      printk("GPIO request faiure: %s\n", GPIO_ANY_GPIO_DESC);
-      return;
-   }
+  printk(KERN_NOTICE "Mapped int %d\n", iec_irq);
 
-   if ( (irq_any_gpio = gpio_to_irq(GPIO_ANY_GPIO)) < 0 ) {
-      printk("GPIO to IRQ mapping faiure %s\n", GPIO_ANY_GPIO_DESC);
-      return;
-   }
+  if (request_irq(iec_irq, (irq_handler_t) iec_handler, 
+		  IRQF_TRIGGER_FALLING, IEC_DESC, DEVICE_DESC)) {
+    printk("Irq Request failure\n");
+    return;
+  }
 
-   printk(KERN_NOTICE "Mapped int %d\n", irq_any_gpio);
-
-   if (request_irq(irq_any_gpio,
-                   (irq_handler_t ) r_irq_handler,
-                   IRQF_TRIGGER_FALLING,
-                   GPIO_ANY_GPIO_DESC,
-                   GPIO_ANY_GPIO_DEVICE_DESC)) {
-      printk("Irq Request failure\n");
-      return;
-   }
-
-   return;
+  return;
 }
-
+>>>>>>> 6369987e37cb4729bd74e74403628c3e88fe14d0
 
 /****************************************************************************/
 /* This function releases interrupts.                                       */
 /****************************************************************************/
+<<<<<<< HEAD
 void r_int_release(void) {
 
    free_irq(irq_any_gpio, GPIO_ANY_GPIO_DEVICE_DESC);
@@ -111,6 +112,82 @@ void r_cleanup(void) {
 module_init(r_init);
 module_exit(r_cleanup);
 
+=======
+void iec_release(void) {
+  free_irq(iec_irq, IEC_DESC);
+  gpio_free(IEC_CLK);
+  return;
+}
+
+/****************************************************************************/
+/* Module init / cleanup block.                                             */
+/****************************************************************************/
+int iec_init(void) {
+  int result;
+
+
+  if ((result = register_chrdev(iec_major, "iec", &iec_fops)) < 0) {
+    printk(KERN_NOTICE "IEC: cannot obtain major number %i\n", iec_major);
+    return result;
+  }
+
+  if (!(iec_buffer = kmalloc(10, GFP_KERNEL))) {
+    printk(KERN_NOTICE "IEC: failed to allocate buffer\n");
+    return -ENOMEM;
+  }
+
+  /* FIXME - don't just say loaded, check iec_config results */
+  printk(KERN_NOTICE "IEC module loaded\n");
+  iec_config();
+  return 0;
+}
+
+void iec_cleanup(void) {
+  unregister_chrdev(iec_major, "iec");
+  kfree(iec_buffer);
+  iec_release();
+  printk(KERN_NOTICE "IEC module removed\n");
+  return;
+}
+
+int iec_open(struct inode *inode, struct file *filp)
+{
+  return 0;
+}
+
+int iec_close(struct inode *inode, struct file *filp)
+{
+  return 0;
+}
+
+ssize_t iec_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
+{
+  unsigned long remaining;
+
+  
+  remaining = copy_to_user(buf, iec_buffer, 1);
+
+  if (*f_pos == 0) {
+    *f_pos += 1;
+    return 1;
+  }
+
+  return 0;
+}
+
+ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
+{
+  const char *tmp;
+  unsigned long remaining;
+  
+
+  tmp = buf + count - 1;
+  remaining = copy_from_user(iec_buffer, tmp, 1);
+  return 1;
+}
+
+module_init(iec_init);
+module_exit(iec_cleanup);
 
 /****************************************************************************/
 /* Module licensing/description block.                                      */
