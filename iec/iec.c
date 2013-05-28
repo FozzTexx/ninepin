@@ -1,14 +1,19 @@
+/* Copyright 2013 by Chris Osborn <fozztexx@fozztexx.com>
+ *
+ * $Id$
+ */
+
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/kernel.h> /* printk() */
-#include <linux/slab.h> /* kmalloc() */
-#include <linux/fs.h> /* everything... */
-#include <linux/errno.h> /* error codes */
-#include <linux/types.h> /* size_t */
+#include <linux/kernel.h>
+#include <linux/slab.h>
+#include <linux/fs.h>
+#include <linux/errno.h>
+#include <linux/types.h>
 #include <linux/proc_fs.h>
-#include <linux/fcntl.h> /* O_ACCMODE */
-#include <asm/system.h> /* cli(), *_flags */
-#include <asm/uaccess.h> /* copy_from/to_user */
+#include <linux/fcntl.h>
+#include <asm/system.h>
+#include <asm/uaccess.h>
 #include <linux/interrupt.h>
 #include <linux/gpio.h>
 #include <asm/io.h>
@@ -52,13 +57,15 @@ struct file_operations iec_fops = {
  release: iec_close
 };
 
-static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs) {
+static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
+{
   unsigned long flags;
 
 
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
 
+  /* FIXME - read bits and buffer data */
   printk(KERN_NOTICE "Interrupt [%d] for device %s was triggered !.\n",
 	 irq, (char *) dev_id);
 
@@ -68,7 +75,8 @@ static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs) {
   return IRQ_HANDLED;
 }
 
-void iec_config(void) {
+void iec_config(void)
+{
   if (gpio_request(IEC_CLK, IEC_DESC)) {
     printk("GPIO request faiure: %s\n", IEC_DESC);
     return;
@@ -91,18 +99,10 @@ void iec_config(void) {
 }
 
 /****************************************************************************/
-/* This function releases interrupts.                                       */
-/****************************************************************************/
-void iec_release(void) {
-  free_irq(iec_irq, IEC_DESC);
-  gpio_free(IEC_CLK);
-  return;
-}
-
-/****************************************************************************/
 /* Module init / cleanup block.                                             */
 /****************************************************************************/
-int iec_init(void) {
+int iec_init(void)
+{
   int result;
   struct resource *mem;
 
@@ -121,15 +121,20 @@ int iec_init(void) {
   }
 
   /* FIXME - don't just say loaded, check iec_config results */
-  printk(KERN_NOTICE "IEC module loaded\n");
   iec_config();
+  printk(KERN_NOTICE "IEC module loaded\n");
+  
   return 0;
 }
 
-void iec_cleanup(void) {
+void iec_cleanup(void)
+{
   unregister_chrdev(iec_major, DEVICE_DESC);
   kfree(iec_buffer);
-  iec_release();
+
+  free_irq(iec_irq, IEC_DESC);
+  gpio_free(IEC_CLK);
+
   iounmap(gpio);
   printk(KERN_NOTICE "IEC module removed\n");
   return;
