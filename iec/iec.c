@@ -11,6 +11,8 @@
 #include <asm/uaccess.h> /* copy_from/to_user */
 #include <linux/interrupt.h>
 #include <linux/gpio.h>
+#include <asm/io.h>
+#include <linux/ioport.h>
 
 #define DRIVER_AUTHOR	"Chris Osborn <fozztexx@fozztexx.com>"
 #define DRIVER_DESC	"Commodore IEC serial driver"
@@ -20,11 +22,23 @@
 #define IEC_DATA	7
 
 #define IEC_DESC	"Clock pin for CBM IEC"
-#define DEVICE_DESC	"some_device"
+#define DEVICE_DESC	"cbm-iec"
 
-short int iec_irq = 0;
-int iec_major = 60;
-char *iec_buffer;
+#define BCM2708_PERI_BASE   0x20000000
+#define GPIO_BASE  (BCM2708_PERI_BASE + 0x200000)
+
+#define INPUT	0
+#define OUTPUT	1
+
+#define digitalRead(pin)	(*(gpio + 13) & (1 << (pin & 31)))
+#define digitalWrite(pin, val)	(*(gpio + 7 + (val ? 0 : 3)) = 1 << (pin & 31))
+#define pinMode(pin, mode)	(*(gpio + pin / 10) &= ~(7 << (pin % 10) * 3) | \
+				 (mode << (pin % 10) * 3))
+
+static short int iec_irq = 0;
+static int iec_major = 60;
+static char *iec_buffer;
+static volatile uint32_t *gpio;
 
 int iec_open(struct inode *inode, struct file *filp);
 int iec_close(struct inode *inode, struct file *filp);
@@ -68,51 +82,17 @@ void iec_config(void) {
   printk(KERN_NOTICE "Mapped int %d\n", iec_irq);
 
   if (request_irq(iec_irq, (irq_handler_t) iec_handler, 
-		  IRQF_TRIGGER_FALLING, IEC_DESC, DEVICE_DESC)) {
+		  IRQF_TRIGGER_RISING, IEC_DESC, DEVICE_DESC)) {
     printk("Irq Request failure\n");
     return;
   }
 
   return;
 }
->>>>>>> 6369987e37cb4729bd74e74403628c3e88fe14d0
 
 /****************************************************************************/
 /* This function releases interrupts.                                       */
 /****************************************************************************/
-<<<<<<< HEAD
-void r_int_release(void) {
-
-   free_irq(irq_any_gpio, GPIO_ANY_GPIO_DEVICE_DESC);
-   gpio_free(GPIO_ANY_GPIO);
-
-   return;
-}
-
-
-/****************************************************************************/
-/* Module init / cleanup block.                                             */
-/****************************************************************************/
-int r_init(void) {
-
-   printk(KERN_NOTICE "Hello !\n");
-   r_int_config();
-
-   return 0;
-}
-
-void r_cleanup(void) {
-   printk(KERN_NOTICE "Goodbye\n");
-   r_int_release();
-
-   return;
-}
-
-
-module_init(r_init);
-module_exit(r_cleanup);
-
-=======
 void iec_release(void) {
   free_irq(iec_irq, IEC_DESC);
   gpio_free(IEC_CLK);
@@ -124,9 +104,13 @@ void iec_release(void) {
 /****************************************************************************/
 int iec_init(void) {
   int result;
+  struct resource *mem;
 
 
-  if ((result = register_chrdev(iec_major, "iec", &iec_fops)) < 0) {
+  mem = request_mem_region(GPIO_BASE, 4096, DEVICE_DESC);
+  gpio = ioremap(GPIO_BASE, 4096);
+   
+  if ((result = register_chrdev(iec_major, DEVICE_DESC, &iec_fops)) < 0) {
     printk(KERN_NOTICE "IEC: cannot obtain major number %i\n", iec_major);
     return result;
   }
@@ -143,9 +127,10 @@ int iec_init(void) {
 }
 
 void iec_cleanup(void) {
-  unregister_chrdev(iec_major, "iec");
+  unregister_chrdev(iec_major, DEVICE_DESC);
   kfree(iec_buffer);
   iec_release();
+  iounmap(gpio);
   printk(KERN_NOTICE "IEC module removed\n");
   return;
 }
