@@ -3,6 +3,10 @@
  * $Id$
  */
 
+/* FIXME - put some easter eggs in here referencing the R.E.M. song
+   "Driver 8" because it's a driver to emulate the 1541 which is
+   normally device number 8. */
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -28,21 +32,34 @@
 
 #define IEC_DESC	"Clock pin for CBM IEC"
 #define DEVICE_DESC	"cbm-iec"
+#define IEC_BUFSIZE	1024
+
+enum {
+  IECWaitState = 1,
+  IECEOIState,
+  IECReadState
+};
 
 #define BCM2708_PERI_BASE   0x20000000
 #define GPIO_BASE  (BCM2708_PERI_BASE + 0x200000)
 
 #define INPUT	0
 #define OUTPUT	1
+#define LOW	0
+#define HIGH	1
 
-#define digitalRead(pin)	(*(gpio + 13) & (1 << (pin & 31)))
-#define digitalWrite(pin, val)	(*(gpio + 7 + (val ? 0 : 3)) = 1 << (pin & 31))
-#define pinMode(pin, mode)	(*(gpio + pin / 10) &= ~(7 << (pin % 10) * 3) | \
-				 (mode << (pin % 10) * 3))
+#define digitalRead(pin)	(*(gpio + 13) & (1 << ((pin) & 31)))
+#define digitalWrite(pin, val)	(*(gpio + 7 + ((val) ? 0 : 3)) = 1 << ((pin) & 31))
+#define pinMode(pin, mode)	({int _p = pin; *(gpio + _p / 10) = \
+						  (*(gpio + _p / 10) &	\
+						   ~(7 << (_p % 10) * 3)) | \
+						  ((mode) << (_p % 10) * 3);})
 
 static short int iec_irq = 0;
 static int iec_major = 60;
-static char *iec_buffer;
+static uint16_t *iec_buffer;
+static short iec_inpos, iec_outpos, iec_bitpos;
+static short iec_state, iec_atn;
 static volatile uint32_t *gpio;
 
 int iec_open(struct inode *inode, struct file *filp);
@@ -51,6 +68,7 @@ ssize_t iec_read(struct file *filp, char __user *buf, size_t count, loff_t *f_po
 ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos);
 
 struct file_operations iec_fops = {
+ owner: THIS_MODULE,
  read: iec_read,
  write: iec_write,
  open: iec_open,
@@ -65,9 +83,29 @@ static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
 
-  /* FIXME - read bits and buffer data */
-  printk(KERN_NOTICE "Interrupt [%d] for device %s was triggered !.\n",
-	 irq, (char *) dev_id);
+  switch (iec_state) {
+  case IECWaitState:
+    pinMode(IEC_DATA, INPUT);
+    /* FIXME - implement some kind of timer to check for EOI */
+    iec_state = IECReadState;
+    iec_bitpos = 0;
+    iec_atn = digitalRead(IEC_ATN);
+    break;
+
+  case IECEOIState:
+    break;
+
+  case IECReadState:
+    iec_buffer[iec_inpos] |= digitalRead(IEC_DATA) << iec_bitpos;
+    iec_bitpos++;
+    if (iec_bitpos == 8) {
+      iec_buffer[iec_inpos] |= iec_atn << 8;
+      iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
+      iec_state = IECWaitState;
+      pinMode(IEC_DATA, OUTPUT);
+    }
+    break;
+  }
 
   // restore hard interrupts
   local_irq_restore(flags);
@@ -107,18 +145,33 @@ int iec_init(void)
   struct resource *mem;
 
 
+  /* FIXME - dynamically allocate entry in dev with dynamic major */
+  /* http://www.makelinux.com/ldd3/ */
+  
   mem = request_mem_region(GPIO_BASE, 4096, DEVICE_DESC);
   gpio = ioremap(GPIO_BASE, 4096);
-   
+
+  pinMode(IEC_ATN, INPUT);
+  pinMode(IEC_CLK, INPUT);
+  pinMode(IEC_DATA, INPUT);
+
+  digitalWrite(IEC_CLK, LOW);
+  digitalWrite(IEC_DATA, LOW);
+
+  /* Pull IEC_DATA low to signal we exist */
+  pinMode(IEC_DATA, OUTPUT);
+  
   if ((result = register_chrdev(iec_major, DEVICE_DESC, &iec_fops)) < 0) {
     printk(KERN_NOTICE "IEC: cannot obtain major number %i\n", iec_major);
     return result;
   }
 
-  if (!(iec_buffer = kmalloc(10, GFP_KERNEL))) {
+  if (!(iec_buffer = kmalloc(IEC_BUFSIZE * sizeof(uint16_t), GFP_KERNEL))) {
     printk(KERN_NOTICE "IEC: failed to allocate buffer\n");
     return -ENOMEM;
   }
+  iec_inpos = iec_outpos = 0;
+  iec_state = IECWaitState;
 
   /* FIXME - don't just say loaded, check iec_config results */
   iec_config();
