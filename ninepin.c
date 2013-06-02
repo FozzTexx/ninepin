@@ -78,9 +78,6 @@ int main(int argc, char *argv[])
   digitalWrite(IEC_CLK, LOW);
   digitalWrite(IEC_DATA, LOW);
 
-  /* Pull IEC_DATA low to signal we exist */
-  pinMode(IEC_DATA, OUTPUT);
-  
   if (numAxes) {
     fprintf(stderr, "WTF: %i\n", numAxes);
     exit(-1);
@@ -102,8 +99,8 @@ int main(int argc, char *argv[])
 #endif
 
 #if 1
-  wiringPiISR(IEC_CLK, INT_EDGE_RISING, readIEC);
-  //wiringPiISR(IEC_ATN, INT_EDGE_BOTH, iecAttention);
+  //wiringPiISR(IEC_CLK, INT_EDGE_RISING, readIEC);
+  wiringPiISR(IEC_ATN, INT_EDGE_FALLING, readIEC);
 #else
   readIEC();
 #endif
@@ -173,23 +170,32 @@ void readIEC()
 {
   static short buf[256];
   static int pos = 0;
-  int val, abort;
+  static int listen = 0;
+  int val, abort, atn;
   int i;
   struct timespec start, now;
   int elapsed;
 
 
-  //fprintf(stderr, "Reading IEC\n");
+  fprintf(stderr, "Reading IEC\n");
   abort = 0;
+  pinMode(IEC_CLK, INPUT);
+  pinMode(IEC_DATA, OUTPUT);
+  
   while (!abort) {
+    atn = !digitalRead(IEC_ATN);
+    if (!atn && listen != 8) {
+      fprintf(stderr, "Nothing for me %i %i\n", atn, listen);
+      break;
+    }
+    
     if (digitalRead(IEC_CLK)) {
+      //fprintf(stderr, "Atn: %i\n", atn);
       //fprintf(stderr, "Reading byte %i\n", pos);
       val = readIECByte();
       if (digitalRead(IEC_CLK))
 	fprintf(stderr, "Why is it still high?\n");
-#if 0
-      fprintf(stderr, "%02x ", val);
-#else
+
       if (val < 0) {
 	//fprintf(stderr, "No bits %i\n", val);
 	abort = 1;
@@ -197,36 +203,34 @@ void readIEC()
       }
 
       buf[pos++] = val;
-#if 0
       if (val & DATA_EOI) {
-	//pinMode(IEC_DATA, INPUT);
-	usleep(60);
-	//pinMode(IEC_DATA, OUTPUT);
-	break;
+	pinMode(IEC_CLK, INPUT);
+	pinMode(IEC_DATA, INPUT);
       }
-#endif
-#endif
+      
+      if ((val & 0x3f0) == 0x220) {
+	//listen = val & 0x0f;
+	fprintf(stderr, "Listen %i\n", listen);
 
-#if 0
-      clock_gettime(CLOCK_MONOTONIC, &start);
-      while (!digitalRead(IEC_CLK)) {
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_nsec - start.tv_nsec) / 1000;
-	if (elapsed >= 10000) {
-	  fprintf(stderr, "Abort waiting for next byte\n");
-	  abort = 1;
-	  break;
+	if (listen != 8) {
+	  pinMode(IEC_CLK, INPUT);
+	  pinMode(IEC_DATA, INPUT);
 	}
+	else
+	  wiringPiISR(IEC_CLK, INT_EDGE_RISING, readIEC);
       }
-#endif
+      if ((val & 0x3f0) == 0x230 && ((val & 0x0f) == 0x0f || (val & 0x0f) == listen)) {
+	listen = 0;
+	fprintf(stderr, "Unlisten\n");
+	wiringPiISR(IEC_CLK, INT_EDGE_RISING, NULL);
+      }
+
+      //if (val > 255)
+      //break;
     }
   }
 
-#if 0
-  if (abort)
-    fprintf(stderr, "Timeout\n");
-#endif
-  if (pos && abort) {
+  if (pos) {
     fprintf(stderr, "Read %i bytes: ", pos);
     for (i = 0; i < pos; i++)
       fprintf(stderr, "%02x ", buf[i]);
@@ -239,12 +243,14 @@ void readIEC()
 
 int readIECByte()
 {
-  int bits, len, eoi, abort;
+  int bits, len, eoi, abort, atn;
   struct timespec start, now;
   int elapsed;
 
-  
+
+  atn = !digitalRead(IEC_ATN);
   pinMode(IEC_DATA, INPUT);
+  /* FIXME - wait for it to go high */
 
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (eoi = abort = 0; digitalRead(IEC_CLK); ) {
@@ -254,15 +260,20 @@ int readIECByte()
     
     if (!eoi && elapsed >= 200) {
       pinMode(IEC_DATA, OUTPUT);
-      usleep(60);
+      usleep(80);
       pinMode(IEC_DATA, INPUT);
       eoi = 1;
     }
 
-    if (elapsed > 100000) {
-      fprintf(stderr, "First bit not received %i\n", elapsed);
-      abort = 1;
-      break;
+    if (elapsed > 1000) {
+      pinMode(IEC_DATA, OUTPUT);
+      usleep(80);
+      pinMode(IEC_DATA, INPUT);
+      if (elapsed > 10000) {
+	fprintf(stderr, "First bit not received %i\n", elapsed);
+	abort = 1;
+	break;
+      }
     }
   }
 
@@ -289,7 +300,7 @@ int readIECByte()
       elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
 	(now.tv_nsec - start.tv_nsec) / 1000;
       if (elapsed >= 10000) {
-	fprintf(stderr, "Timeout after bit %i\n", len);
+	fprintf(stderr, "Timeout after bit %i %i %i %02x\n", len, eoi, atn, bits);
 	if (len < 7)
 	  abort = 1;
 	break;
@@ -304,7 +315,7 @@ int readIECByte()
   
   if (eoi)
     bits |= DATA_EOI;
-  if (!digitalRead(IEC_ATN))
+  if (atn)
     bits |= DATA_ATN;
   
   return bits;
@@ -312,7 +323,8 @@ int readIECByte()
 
 void iecAttention()
 {
-  iecAttentionState = digitalRead(IEC_ATN);
-  fprintf(stderr, "Attention: %i\n", iecAttentionState);
+  pinMode(IEC_CLK, INPUT);
+  pinMode(IEC_DATA, OUTPUT);
+  //readIEC();
   return;
 }
