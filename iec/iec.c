@@ -48,12 +48,13 @@ enum {
 #define LOW	0
 #define HIGH	1
 
-#define digitalRead(pin)	(*(gpio + 13) & (1 << ((pin) & 31)))
-#define digitalWrite(pin, val)	(*(gpio + 7 + ((val) ? 0 : 3)) = 1 << ((pin) & 31))
-#define pinMode(pin, mode)	({int _p = pin; *(gpio + _p / 10) = \
-						  (*(gpio + _p / 10) &	\
-						   ~(7 << (_p % 10) * 3)) | \
-						  ((mode) << (_p % 10) * 3);})
+#define digitalRead(pin)	({int _p = (pin) & 31; (*(gpio + 13) & (1 << _p)) >> _p;})
+#define digitalWrite(pin, val)	({int _p = (pin) & 31; *(gpio + 7 + ((val) ? 0 : 3)) = \
+							 1 << _p;})
+#define pinMode(pin, mode)	({int _p = (pin) & 31; *(gpio + _p / 10) = \
+							 (*(gpio + _p / 10) & \
+							  ~(7 << (_p % 10) * 3)) | \
+							 ((mode) << (_p % 10) * 3);})
 
 static short int iec_irq = 0;
 static int iec_major = 60;
@@ -88,18 +89,20 @@ static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
     pinMode(IEC_DATA, INPUT);
     /* FIXME - implement some kind of timer to check for EOI */
     iec_state = IECReadState;
-    iec_bitpos = 0;
-    iec_atn = digitalRead(IEC_ATN);
+    iec_buffer[iec_inpos] = iec_bitpos = 0;
+    iec_atn = !digitalRead(IEC_ATN);
     break;
 
   case IECEOIState:
     break;
 
   case IECReadState:
-    iec_buffer[iec_inpos] |= digitalRead(IEC_DATA) << iec_bitpos;
+    if (digitalRead(IEC_DATA))
+	iec_buffer[iec_inpos] |= 1 << iec_bitpos;
     iec_bitpos++;
     if (iec_bitpos == 8) {
       iec_buffer[iec_inpos] |= iec_atn << 8;
+      printk("IEC Read: %03x\n", iec_buffer[iec_inpos]);
       iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
       iec_state = IECWaitState;
       pinMode(IEC_DATA, OUTPUT);
@@ -147,6 +150,7 @@ int iec_init(void)
 
   /* FIXME - dynamically allocate entry in dev with dynamic major */
   /* http://www.makelinux.com/ldd3/ */
+  /* http://stackoverflow.com/questions/5970595/create-a-device-node-in-code */
   
   mem = request_mem_region(GPIO_BASE, 4096, DEVICE_DESC);
   gpio = ioremap(GPIO_BASE, 4096);
@@ -185,7 +189,7 @@ void iec_cleanup(void)
   unregister_chrdev(iec_major, DEVICE_DESC);
   kfree(iec_buffer);
 
-  free_irq(iec_irq, IEC_DESC);
+  free_irq(iec_irq, DEVICE_DESC);
   gpio_free(IEC_CLK);
 
   iounmap(gpio);
@@ -206,13 +210,23 @@ int iec_close(struct inode *inode, struct file *filp)
 ssize_t iec_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
   unsigned long remaining;
+  int avail;
 
+
+  avail = (IEC_BUFSIZE + iec_inpos - iec_outpos) % IEC_BUFSIZE;
+  avail *= 2;
+  /* FIXME - if avail is zero, block */
   
-  remaining = copy_to_user(buf, iec_buffer, 1);
+  if (count % 2)
+    count--;
+  if (count > avail)
+    count = avail;
+  remaining = copy_to_user(buf, &iec_buffer[iec_outpos], count);
+  iec_outpos += (count - remaining) / 2;
 
   if (*f_pos == 0) {
-    *f_pos += 1;
-    return 1;
+    *f_pos += count;
+    return count;
   }
 
   return 0;
@@ -220,12 +234,6 @@ ssize_t iec_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 
 ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos)
 {
-  const char *tmp;
-  unsigned long remaining;
-  
-
-  tmp = buf + count - 1;
-  remaining = copy_from_user(iec_buffer, tmp, 1);
   return 1;
 }
 
