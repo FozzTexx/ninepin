@@ -22,6 +22,7 @@
 #include <linux/gpio.h>
 #include <asm/io.h>
 #include <linux/ioport.h>
+#include <linux/delay.h>
 
 #define DRIVER_AUTHOR	"Chris Osborn <fozztexx@fozztexx.com>"
 #define DRIVER_DESC	"Commodore IEC serial driver"
@@ -33,6 +34,9 @@
 #define IEC_DESC	"Clock pin for CBM IEC"
 #define DEVICE_DESC	"cbm-iec"
 #define IEC_BUFSIZE	1024
+
+#define DATA_EOI	0x100
+#define DATA_ATN	0x200
 
 enum {
   IECWaitState = 1,
@@ -59,8 +63,7 @@ enum {
 static short int iec_irq = 0;
 static int iec_major = 60;
 static uint16_t *iec_buffer;
-static short iec_inpos, iec_outpos, iec_bitpos;
-static short iec_state, iec_atn;
+static short iec_inpos, iec_outpos;
 static volatile uint32_t *gpio;
 
 int iec_open(struct inode *inode, struct file *filp);
@@ -79,35 +82,77 @@ struct file_operations iec_fops = {
 static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
 {
   unsigned long flags;
+  struct timeval start, now;
+  int eoi, abort;
+  int elapsed;
+  int len, bits;
 
 
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
 
-  switch (iec_state) {
-  case IECWaitState:
-    pinMode(IEC_DATA, INPUT);
-    /* FIXME - implement some kind of timer to check for EOI */
-    iec_state = IECReadState;
-    iec_buffer[iec_inpos] = iec_bitpos = 0;
-    iec_atn = !digitalRead(IEC_ATN);
-    break;
+  pinMode(IEC_DATA, INPUT);
+  do_gettimeofday(&start);
+  for (eoi = abort = 0; digitalRead(IEC_CLK); ) {
+    do_gettimeofday(&now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
 
-  case IECEOIState:
-    break;
-
-  case IECReadState:
-    if (digitalRead(IEC_DATA))
-	iec_buffer[iec_inpos] |= 1 << iec_bitpos;
-    iec_bitpos++;
-    if (iec_bitpos == 8) {
-      iec_buffer[iec_inpos] |= iec_atn << 8;
-      printk("IEC Read: %03x\n", iec_buffer[iec_inpos]);
-      iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
-      iec_state = IECWaitState;
+    if (!eoi && elapsed >= 200) {
       pinMode(IEC_DATA, OUTPUT);
+      udelay(80);
+      pinMode(IEC_DATA, INPUT);
+      eoi = 1;
     }
-    break;
+
+    if (elapsed > 10000) {
+      printk("IEC: Timeout during start\n");
+      abort = 1;
+      break;
+    }
+  }
+
+  for (len = bits = 0; !abort && len < 8; len++) {
+    do_gettimeofday(&start);
+    while (!digitalRead(IEC_CLK)) {
+      do_gettimeofday(&now);
+      elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+      if (elapsed >= 10000) {
+	printk("IEC: timeout waiting for bit %i\n", len);
+	abort = 1;
+	break;
+      }
+    }
+
+    if (abort)
+      break;
+
+    if (digitalRead(IEC_DATA))
+      bits |= 1 << len;
+
+    do_gettimeofday(&start);
+    while (digitalRead(IEC_CLK)) {
+      do_gettimeofday(&now);
+      elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+      if (elapsed >= 10000) {
+	printk("IEC: Timeout after bit %i %i\n", len, elapsed);
+	if (len < 7)
+	  abort = 1;
+	break;
+      }
+    }
+  }
+
+  pinMode(IEC_DATA, OUTPUT);
+
+  if (!abort) {
+    if (eoi)
+      bits |= DATA_EOI;
+    if (!digitalRead(IEC_ATN))
+      bits |= DATA_ATN;
+
+    iec_buffer[iec_inpos] = bits;
+    printk("IEC Read: %03x\n", iec_buffer[iec_inpos]);
+    iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
   }
 
   // restore hard interrupts
@@ -175,7 +220,6 @@ int iec_init(void)
     return -ENOMEM;
   }
   iec_inpos = iec_outpos = 0;
-  iec_state = IECWaitState;
 
   /* FIXME - don't just say loaded, check iec_config results */
   iec_config();
