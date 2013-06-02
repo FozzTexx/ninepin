@@ -85,7 +85,8 @@ int main(int argc, char *argv[])
     fprintf(stderr, "WTF: %i\n", numAxes);
     exit(-1);
   }
-  
+
+#if 0
   if ((joyfd = open("/dev/input/js0", O_RDONLY)) < 0) {
     fprintf(stderr, "Unable to open joystick\n");
     exit(-1);
@@ -98,15 +99,17 @@ int main(int argc, char *argv[])
   
   axis = calloc(numAxes, sizeof(int));
   button = calloc(numButtons, sizeof(int));
+#endif
 
-#if 0
+#if 1
   wiringPiISR(IEC_CLK, INT_EDGE_RISING, readIEC);
-  wiringPiISR(IEC_ATN, INT_EDGE_BOTH, iecAttention);
+  //wiringPiISR(IEC_ATN, INT_EDGE_BOTH, iecAttention);
 #else
   readIEC();
 #endif
   
   for (;;) {
+#if 0
     /* FIXME - check for read error, maybe user unplugged joystick */
     read(joyfd, &js, sizeof(struct js_event));
 
@@ -139,6 +142,7 @@ int main(int argc, char *argv[])
       fflush(stdout);
       last = output;
     }
+#endif
   }
   
   /* FIXME - update console joystick port */
@@ -167,20 +171,23 @@ void writeBits(int output)
 
 void readIEC()
 {
-  char buf[256];
-  int pos, val, abort;
+  static short buf[256];
+  static int pos = 0;
+  int val, abort;
   int i;
   struct timespec start, now;
   int elapsed;
 
 
   //fprintf(stderr, "Reading IEC\n");
-  pos = abort = 0;
+  abort = 0;
   while (!abort) {
     if (digitalRead(IEC_CLK)) {
       //fprintf(stderr, "Reading byte %i\n", pos);
       val = readIECByte();
-#if 1
+      if (digitalRead(IEC_CLK))
+	fprintf(stderr, "Why is it still high?\n");
+#if 0
       fprintf(stderr, "%02x ", val);
 #else
       if (val < 0) {
@@ -188,21 +195,23 @@ void readIEC()
 	abort = 1;
 	break;
       }
-    
+
       buf[pos++] = val;
+#if 0
       if (val & DATA_EOI) {
-	pinMode(IEC_DATA, INPUT);
+	//pinMode(IEC_DATA, INPUT);
 	usleep(60);
-	pinMode(IEC_DATA, OUTPUT);
+	//pinMode(IEC_DATA, OUTPUT);
 	break;
       }
+#endif
 #endif
 
 #if 0
       clock_gettime(CLOCK_MONOTONIC, &start);
       while (!digitalRead(IEC_CLK)) {
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed = (now.tv_sec - start.tv_sec) / 1e-6 + (now.tv_nsec - start.tv_nsec) / 1e3;
+	elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_nsec - start.tv_nsec) / 1000;
 	if (elapsed >= 10000) {
 	  fprintf(stderr, "Abort waiting for next byte\n");
 	  abort = 1;
@@ -213,12 +222,17 @@ void readIEC()
     }
   }
 
+#if 0
   if (abort)
     fprintf(stderr, "Timeout\n");
-  fprintf(stderr, "Read %i bytes\n", pos);
-  for (i = 0; i < pos; i++)
-    fprintf(stderr, "%02x ", buf[i]);
-  fprintf(stderr, "\n");
+#endif
+  if (pos && abort) {
+    fprintf(stderr, "Read %i bytes: ", pos);
+    for (i = 0; i < pos; i++)
+      fprintf(stderr, "%02x ", buf[i]);
+    fprintf(stderr, "\n");
+    pos = 0;
+  }
   
   return;
 }
@@ -235,7 +249,8 @@ int readIECByte()
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (eoi = abort = 0; digitalRead(IEC_CLK); ) {
     clock_gettime(CLOCK_MONOTONIC, &now);
-    elapsed = (now.tv_sec - start.tv_sec) / 1e-6 + (now.tv_nsec - start.tv_nsec) / 1e3;
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
+      (now.tv_nsec - start.tv_nsec) / 1000;
     
     if (!eoi && elapsed >= 200) {
       pinMode(IEC_DATA, OUTPUT);
@@ -244,8 +259,8 @@ int readIECByte()
       eoi = 1;
     }
 
-    if (elapsed > 10000) {
-      fprintf(stderr, "First bit not received\n");
+    if (elapsed > 100000) {
+      fprintf(stderr, "First bit not received %i\n", elapsed);
       abort = 1;
       break;
     }
@@ -255,7 +270,8 @@ int readIECByte()
     clock_gettime(CLOCK_MONOTONIC, &start);
     while (!digitalRead(IEC_CLK)) {
       clock_gettime(CLOCK_MONOTONIC, &now);
-      elapsed = (now.tv_sec - start.tv_sec) / 1e-6 + (now.tv_nsec - start.tv_nsec) / 1e3;
+      elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
+	(now.tv_nsec - start.tv_nsec) / 1000;
       if (elapsed >= 100000) {
 	fprintf(stderr, "Timeout waiting for bit %i\n", len);
 	abort = 1;
@@ -270,7 +286,8 @@ int readIECByte()
 
     while (digitalRead(IEC_CLK)) {
       clock_gettime(CLOCK_MONOTONIC, &now);
-      elapsed = (now.tv_sec - start.tv_sec) / 1e-6 + (now.tv_nsec - start.tv_nsec) / 1e3;
+      elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
+	(now.tv_nsec - start.tv_nsec) / 1000;
       if (elapsed >= 10000) {
 	fprintf(stderr, "Timeout after bit %i\n", len);
 	if (len < 7)
