@@ -98,12 +98,8 @@ int main(int argc, char *argv[])
   button = calloc(numButtons, sizeof(int));
 #endif
 
-#if 1
   //wiringPiISR(IEC_CLK, INT_EDGE_RISING, readIEC);
   wiringPiISR(IEC_ATN, INT_EDGE_FALLING, readIEC);
-#else
-  readIEC();
-#endif
   
   for (;;) {
 #if 0
@@ -143,6 +139,8 @@ int main(int argc, char *argv[])
   }
   
   /* FIXME - update console joystick port */
+
+  fprintf(stderr, "Out of infinite loop!\n");
   
   exit(0);
 }
@@ -170,22 +168,29 @@ void readIEC()
 {
   static short buf[256];
   static int pos = 0;
-  static int listen = 0;
+  static int listen = 31;
   int val, abort, atn;
   int i;
   struct timespec start, now;
   int elapsed;
+  int cmd, dev;
+  
 
-
-  fprintf(stderr, "Reading IEC\n");
+  //fprintf(stderr, "Reading IEC\n", spinlock);
   abort = 0;
-  pinMode(IEC_CLK, INPUT);
-  pinMode(IEC_DATA, OUTPUT);
+  atn = !digitalRead(IEC_ATN);
+  //fprintf(stderr, "ATN: %i\n", atn);
+  if (atn) {
+    pinMode(IEC_CLK, INPUT);
+    pinMode(IEC_DATA, OUTPUT);
+  }
+  else if (listen != 8)
+    abort = 1;
   
   while (!abort) {
     atn = !digitalRead(IEC_ATN);
     if (!atn && listen != 8) {
-      fprintf(stderr, "Nothing for me %i %i\n", atn, listen);
+      //fprintf(stderr, "Nothing for me %i %i\n", atn, listen);
       break;
     }
     
@@ -206,23 +211,35 @@ void readIEC()
       if (val & DATA_EOI) {
 	pinMode(IEC_CLK, INPUT);
 	pinMode(IEC_DATA, INPUT);
+	break;
       }
-      
-      if ((val & 0x3f0) == 0x220) {
-	//listen = val & 0x0f;
-	fprintf(stderr, "Listen %i\n", listen);
 
-	if (listen != 8) {
-	  pinMode(IEC_CLK, INPUT);
-	  pinMode(IEC_DATA, INPUT);
+      if (atn) {
+	cmd = val & 0xe0;
+	dev = val & 0x1f;
+
+	switch (cmd) {
+	case 0x20: /* Listen */
+	  listen = dev;
+	  //fprintf(stderr, "Listen %i\n", listen);
+	  if (listen != 8) {
+	    pinMode(IEC_CLK, INPUT);
+	    pinMode(IEC_DATA, INPUT);
+
+	    /* Ignore rest of commands sent during ATN */
+	    clock_gettime(CLOCK_MONOTONIC, &start);
+	    while (!digitalRead(IEC_ATN)) {
+	      clock_gettime(CLOCK_MONOTONIC, &now);
+	      elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
+		(now.tv_nsec - start.tv_nsec) / 1000;
+	      if (elapsed >= 100000) {
+		fprintf(stderr, "Timeout waiting for end of ATN\n");
+		abort = 1;
+		break;
+	      }
+	    }
+	  }
 	}
-	else
-	  wiringPiISR(IEC_CLK, INT_EDGE_RISING, readIEC);
-      }
-      if ((val & 0x3f0) == 0x230 && ((val & 0x0f) == 0x0f || (val & 0x0f) == listen)) {
-	listen = 0;
-	fprintf(stderr, "Unlisten\n");
-	wiringPiISR(IEC_CLK, INT_EDGE_RISING, NULL);
       }
 
       //if (val > 255)
@@ -237,7 +254,7 @@ void readIEC()
     fprintf(stderr, "\n");
     pos = 0;
   }
-  
+
   return;
 }
 
@@ -250,10 +267,22 @@ int readIECByte()
 
   atn = !digitalRead(IEC_ATN);
   pinMode(IEC_DATA, INPUT);
-  /* FIXME - wait for it to go high */
+
+  abort = 0;
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  while (!digitalRead(IEC_CLK)) {
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
+      (now.tv_nsec - start.tv_nsec) / 1000;
+    if (elapsed >= 100000) {
+      fprintf(stderr, "Timeout waiting for talk\n");
+      abort = 1;
+      break;
+    }
+  }
 
   clock_gettime(CLOCK_MONOTONIC, &start);
-  for (eoi = abort = 0; digitalRead(IEC_CLK); ) {
+  for (eoi = 0; !abort &&  digitalRead(IEC_CLK); ) {
     clock_gettime(CLOCK_MONOTONIC, &now);
     elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
       (now.tv_nsec - start.tv_nsec) / 1000;
