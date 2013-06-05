@@ -164,6 +164,29 @@ void writeBits(int output)
   return;
 }
 
+/* Ignore rest of commands sent during ATN */
+int waitForATNEnd()
+{
+  struct timespec start, now;
+  int elapsed;
+  int abort = 0;
+
+  
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  while (!digitalRead(IEC_ATN)) {
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
+      (now.tv_nsec - start.tv_nsec) / 1000;
+    if (elapsed >= 100000) {
+      fprintf(stderr, "Timeout waiting for end of ATN\n");
+      abort = 1;
+      break;
+    }
+  }
+
+  return abort;
+}
+
 void readIEC()
 {
   static short buf[256];
@@ -225,20 +248,22 @@ void readIEC()
 	  if (listen != 8) {
 	    pinMode(IEC_CLK, INPUT);
 	    pinMode(IEC_DATA, INPUT);
-
-	    /* Ignore rest of commands sent during ATN */
-	    clock_gettime(CLOCK_MONOTONIC, &start);
-	    while (!digitalRead(IEC_ATN)) {
-	      clock_gettime(CLOCK_MONOTONIC, &now);
-	      elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
-		(now.tv_nsec - start.tv_nsec) / 1000;
-	      if (elapsed >= 100000) {
-		fprintf(stderr, "Timeout waiting for end of ATN\n");
-		abort = 1;
-		break;
-	      }
-	    }
+	    abort = waitForATNEnd();
 	  }
+
+	case 0x40: /* Talk */
+	  if (dev != 8) {
+	    pinMode(IEC_CLK, INPUT);
+	    pinMode(IEC_DATA, INPUT);
+	    abort = waitForATNEnd();
+	  }
+	  break;
+
+	case 0x60: /* Channel */
+	  break;
+
+	case 0xE0: /* Open/Close */
+	  break;
 	}
       }
 
