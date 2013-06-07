@@ -27,21 +27,24 @@
 #define DRIVER_AUTHOR	"Chris Osborn <fozztexx@fozztexx.com>"
 #define DRIVER_DESC	"Commodore IEC serial driver"
 
+#define IEC_BUFSIZE	1024
+
 #define IEC_ATN		25
 #define IEC_CLK		8
 #define IEC_DATA	7
 
-#define IEC_DESC	"Clock pin for CBM IEC"
-#define DEVICE_DESC	"cbm-iec"
-#define IEC_BUFSIZE	1024
+#define LABEL_ATN	"IEC attention pin"
+#define LABEL_CLK	"IEC clock pin"
+#define LABEL_DATA	"IEC data pin"
+#define LABEL_DEVICE	"cbm-iec driver"
 
 #define DATA_EOI	0x100
 #define DATA_ATN	0x200
 
 enum {
   IECWaitState = 1,
-  IECEOIState,
-  IECReadState
+  IECListenState,
+  IECTalkState,
 };
 
 #define BCM2708_PERI_BASE   0x20000000
@@ -60,12 +63,16 @@ enum {
 							  ~(7 << (_p % 10) * 3)) | \
 							 ((mode) << (_p % 10) * 3);})
 
-static short int iec_irq = 0;
+static short int irq_atn = 0, irq_clk = 0;
+static int clk_enabled = 0;
 static int iec_major = 60;
 static uint16_t *iec_buffer;
 static short iec_inpos, iec_outpos;
 static volatile uint32_t *gpio;
+static int iec_state = 0;
 
+static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs);
+static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs);
 int iec_open(struct inode *inode, struct file *filp);
 int iec_close(struct inode *inode, struct file *filp);
 ssize_t iec_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos);
@@ -79,21 +86,31 @@ struct file_operations iec_fops = {
  release: iec_close
 };
 
-static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
+int iec_readByte(void)
 {
-  unsigned long flags;
-  struct timeval start, now;
-  int eoi, abort;
-  int elapsed;
+  int eoi, abort, elapsed;
   int len, bits;
+  struct timeval start, now;
 
-
-  // disable hard interrupts (remember them in flag 'flags')
-  local_irq_save(flags);
-
+  
   pinMode(IEC_DATA, INPUT);
+
+  abort = 0;
+#if 0
   do_gettimeofday(&start);
-  for (eoi = abort = 0; digitalRead(IEC_CLK); ) {
+  while (!digitalRead(IEC_CLK)) {
+    do_gettimeofday(&now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+    if (elapsed >= 100000) {
+      printk(KERN_NOTICE "IEC: Timeout waiting for talker\n");
+      abort = 1;
+      break;
+    }
+  }
+#endif
+
+  do_gettimeofday(&start);
+  for (eoi = 0; !abort && digitalRead(IEC_CLK); ) {
     do_gettimeofday(&now);
     elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
 
@@ -105,7 +122,7 @@ static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
     }
 
     if (elapsed > 10000) {
-      printk("IEC: Timeout during start\n");
+      printk(KERN_NOTICE "IEC: Timeout during start\n");
       abort = 1;
       break;
     }
@@ -117,7 +134,7 @@ static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
       do_gettimeofday(&now);
       elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
       if (elapsed >= 10000) {
-	printk("IEC: timeout waiting for bit %i\n", len);
+	printk(KERN_NOTICE "IEC: timeout waiting for bit %i\n", len);
 	abort = 1;
 	break;
       }
@@ -134,7 +151,7 @@ static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
       do_gettimeofday(&now);
       elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
       if (elapsed >= 10000) {
-	printk("IEC: Timeout after bit %i %i\n", len, elapsed);
+	printk(KERN_NOTICE "IEC: Timeout after bit %i %i\n", len, elapsed);
 	if (len < 7)
 	  abort = 1;
 	break;
@@ -144,60 +161,163 @@ static irqreturn_t iec_handler(int irq, void *dev_id, struct pt_regs *regs)
 
   pinMode(IEC_DATA, OUTPUT);
 
-  if (!abort) {
-    if (eoi)
-      bits |= DATA_EOI;
-    if (!digitalRead(IEC_ATN))
-      bits |= DATA_ATN;
+  if (abort)
+    return -1;
 
-    iec_buffer[iec_inpos] = bits;
-    printk("IEC Read: %03x\n", iec_buffer[iec_inpos]);
-    iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
+  if (eoi)
+    bits |= DATA_EOI;
+  return bits;
+}
+  
+int iec_waitForATNEnd(void)
+{
+  struct timeval start, now;
+  int elapsed;
+  int abort = 0;
+
+  
+  do_gettimeofday(&start);
+  while (!digitalRead(IEC_ATN)) {
+    do_gettimeofday(&now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+    if (elapsed >= 100000) {
+      printk(KERN_NOTICE "IEC: Timeout waiting for end of ATN\n");
+      abort = 1;
+      break;
+    }
   }
 
+  return abort;
+}
+
+void iec_enableClockIRQ(int flag)
+{
+  if (flag && !clk_enabled) {
+    //enable_irq(irq_clk);
+    clk_enabled++;
+  }
+  else if (!flag && clk_enabled) {
+    //disable_irq(irq_clk);
+    clk_enabled--;
+  }
+
+  return;
+}
+
+int iec_releaseBus(void)
+{
+  int abort = 0;
+
+  
+  pinMode(IEC_CLK, INPUT);
+  pinMode(IEC_DATA, INPUT);
+  //abort = iec_waitForATNEnd();
+  iec_enableClockIRQ(0);
+  iec_state = IECWaitState;
+  return abort;
+}
+
+static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
+{
+  unsigned long flags;
+  int atn, val, cmd, dev;
+  int abort;
+
+
+  atn = !digitalRead(IEC_ATN);
+  if (!atn && iec_state != IECListenState)
+    return IRQ_HANDLED;
+  
+  // disable hard interrupts (remember them in flag 'flags')
+  local_irq_save(flags);
+
+  printk(KERN_NOTICE "IEC: clock\n");
+  
+  abort = 0;
+
+  val = iec_readByte();
+  printk(KERN_NOTICE "IEC: Read: %03x\n", val);
+  if (val >= 0) {
+    iec_buffer[iec_inpos] = val;
+    iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
+
+    if (val & DATA_EOI)
+      iec_releaseBus();
+    else if (atn) {
+      cmd = val & 0xe0;
+      dev = val & 0x1f;
+
+      switch (cmd) {
+      case 0x20: /* Listen */
+	if (dev != 8)
+	  iec_releaseBus();
+	else {
+	  iec_state = IECListenState;
+	  iec_enableClockIRQ(1);
+	}
+	break;
+
+      case 0x40: /* Talk */
+	if (dev != 8)
+	  iec_releaseBus();
+	else {
+	  iec_state = IECTalkState;
+	  iec_enableClockIRQ(1);
+	}
+	break;
+
+      case 0x60: /* Channel */
+	break;
+
+      case 0xE0: /* Open/Close */
+	break;
+      }
+    }
+  }
+  
   // restore hard interrupts
   local_irq_restore(flags);
 
   return IRQ_HANDLED;
 }
 
-void iec_config(void)
+static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
 {
-  if (gpio_request(IEC_CLK, IEC_DESC)) {
-    printk("GPIO request faiure: %s\n", IEC_DESC);
-    return;
+  unsigned long flags;
+  int atn;
+
+
+  // disable hard interrupts (remember them in flag 'flags')
+  local_irq_save(flags);
+
+  printk(KERN_NOTICE "IEC: attention\n");
+  
+  atn = !digitalRead(IEC_ATN);
+  if (atn) {
+    iec_enableClockIRQ(1);
+    pinMode(IEC_CLK, INPUT);
+    pinMode(IEC_DATA, OUTPUT);
   }
+  
+  // restore hard interrupts
+  local_irq_restore(flags);
 
-  if ((iec_irq = gpio_to_irq(IEC_CLK)) < 0) {
-    printk("GPIO to IRQ mapping faiure %s\n", IEC_DESC);
-    return;
-  }
-
-  printk(KERN_NOTICE "Mapped int %d\n", iec_irq);
-
-  if (request_irq(iec_irq, (irq_handler_t) iec_handler, 
-		  IRQF_TRIGGER_RISING, IEC_DESC, DEVICE_DESC)) {
-    printk("Irq Request failure\n");
-    return;
-  }
-
-  return;
+  return IRQ_HANDLED;
 }
 
-/****************************************************************************/
-/* Module init / cleanup block.                                             */
-/****************************************************************************/
 int iec_init(void)
 {
   int result;
   struct resource *mem;
 
 
+  /* FIXME - if allocation fails for anything clean up what didn't fail */
+  
   /* FIXME - dynamically allocate entry in dev with dynamic major */
   /* http://www.makelinux.com/ldd3/ */
   /* http://stackoverflow.com/questions/5970595/create-a-device-node-in-code */
   
-  mem = request_mem_region(GPIO_BASE, 4096, DEVICE_DESC);
+  mem = request_mem_region(GPIO_BASE, 4096, LABEL_DEVICE);
   gpio = ioremap(GPIO_BASE, 4096);
 
   pinMode(IEC_ATN, INPUT);
@@ -207,34 +327,90 @@ int iec_init(void)
   digitalWrite(IEC_CLK, LOW);
   digitalWrite(IEC_DATA, LOW);
 
-  /* Pull IEC_DATA low to signal we exist */
-  pinMode(IEC_DATA, OUTPUT);
-  
-  if ((result = register_chrdev(iec_major, DEVICE_DESC, &iec_fops)) < 0) {
+  if ((result = register_chrdev(iec_major, LABEL_DEVICE, &iec_fops)) < 0) {
     printk(KERN_NOTICE "IEC: cannot obtain major number %i\n", iec_major);
-    return result;
+    goto fail_chrdev;
   }
 
   if (!(iec_buffer = kmalloc(IEC_BUFSIZE * sizeof(uint16_t), GFP_KERNEL))) {
     printk(KERN_NOTICE "IEC: failed to allocate buffer\n");
-    return -ENOMEM;
+    result = -ENOMEM;
+    goto fail_buffer;
   }
   iec_inpos = iec_outpos = 0;
 
-  /* FIXME - don't just say loaded, check iec_config results */
-  iec_config();
-  printk(KERN_NOTICE "IEC module loaded\n");
+  if ((result = gpio_request(IEC_ATN, LABEL_ATN))) {
+    printk(KERN_NOTICE "IEC: GPIO request faiure: %s\n", LABEL_ATN);
+    goto fail_atn;
+  }
+  if ((result = gpio_request(IEC_CLK, LABEL_CLK))) {
+    printk(KERN_NOTICE "IEC: GPIO request faiure: %s\n", LABEL_CLK);
+    goto fail_clk;
+  }
+  if ((result = gpio_request(IEC_DATA, LABEL_DATA))) {
+    printk(KERN_NOTICE "IEC: GPIO request faiure: %s\n", LABEL_DATA);
+    goto fail_data;
+  }
+
+  if ((irq_atn = gpio_to_irq(IEC_ATN)) < 0) {
+    printk(KERN_NOTICE "IEC: GPIO to IRQ mapping faiure %s\n", LABEL_ATN);
+    result = irq_atn;
+    goto fail_mapatn;
+  }
+
+  if ((irq_clk = gpio_to_irq(IEC_CLK)) < 0) {
+    printk(KERN_NOTICE "IEC: GPIO to IRQ mapping faiure %s\n", LABEL_CLK);
+    result = irq_clk;
+    goto fail_mapclk;
+  }
+
+  /* FIXME - don't enable interrupts until user space opens driver */
+  if ((result = request_irq(irq_atn, (irq_handler_t) iec_handleATN, 
+			 IRQF_TRIGGER_FALLING, LABEL_ATN, LABEL_DEVICE))) {
+    printk(KERN_NOTICE "IEC: IRQ Request failure\n");
+    goto fail_irqatn;
+  }
+
+  if ((result = request_irq(irq_clk, (irq_handler_t) iec_handleCLK, 
+			    IRQF_TRIGGER_RISING, LABEL_CLK, LABEL_DEVICE))) {
+    printk(KERN_NOTICE "IEC: IRQ Request failure\n");
+    goto fail_irqclk;
+  }
+
+  //disable_irq(irq_clk);
   
+  printk(KERN_NOTICE "IEC module loaded\n");
+
   return 0;
+
+ fail_irqclk:
+  free_irq(irq_atn, LABEL_DEVICE);
+ fail_irqatn:
+ fail_mapclk:
+ fail_mapatn:
+  gpio_free(IEC_DATA);
+ fail_data:
+  gpio_free(IEC_CLK);
+ fail_clk:
+  gpio_free(IEC_ATN);
+ fail_atn:
+  kfree(iec_buffer);
+ fail_buffer:
+  unregister_chrdev(iec_major, LABEL_DEVICE);
+ fail_chrdev:
+  return result;
 }
 
 void iec_cleanup(void)
 {
-  unregister_chrdev(iec_major, DEVICE_DESC);
+  unregister_chrdev(iec_major, LABEL_DEVICE);
   kfree(iec_buffer);
 
-  free_irq(iec_irq, DEVICE_DESC);
+  free_irq(irq_atn, LABEL_DEVICE);
+  free_irq(irq_clk, LABEL_DEVICE);
+  gpio_free(IEC_ATN);
   gpio_free(IEC_CLK);
+  gpio_free(IEC_DATA);
 
   iounmap(gpio);
   printk(KERN_NOTICE "IEC module removed\n");

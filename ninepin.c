@@ -194,8 +194,6 @@ void readIEC()
   static int listen = 31;
   int val, abort, atn;
   int i;
-  struct timespec start, now;
-  int elapsed;
   int cmd, dev;
   
 
@@ -250,6 +248,7 @@ void readIEC()
 	    pinMode(IEC_DATA, INPUT);
 	    abort = waitForATNEnd();
 	  }
+	  break;
 
 	case 0x40: /* Talk */
 	  if (dev != 8) {
@@ -307,7 +306,7 @@ int readIECByte()
   }
 
   clock_gettime(CLOCK_MONOTONIC, &start);
-  for (eoi = 0; !abort &&  digitalRead(IEC_CLK); ) {
+  for (eoi = 0; !abort && digitalRead(IEC_CLK); ) {
     clock_gettime(CLOCK_MONOTONIC, &now);
     elapsed = (now.tv_sec - start.tv_sec) * 1000000 +
       (now.tv_nsec - start.tv_nsec) / 1000;
