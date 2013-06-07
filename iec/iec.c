@@ -45,6 +45,7 @@ enum {
   IECWaitState = 1,
   IECListenState,
   IECTalkState,
+  IECSendState,
 };
 
 #define BCM2708_PERI_BASE   0x20000000
@@ -64,7 +65,6 @@ enum {
 							 ((mode) << (_p % 10) * 3);})
 
 static short int irq_atn = 0, irq_clk = 0;
-static int clk_enabled = 0;
 static int iec_major = 60;
 static uint16_t *iec_buffer;
 static short iec_inpos, iec_outpos;
@@ -190,20 +190,6 @@ int iec_waitForATNEnd(void)
   return abort;
 }
 
-void iec_enableClockIRQ(int flag)
-{
-  if (flag && !clk_enabled) {
-    //enable_irq(irq_clk);
-    clk_enabled++;
-  }
-  else if (!flag && clk_enabled) {
-    //disable_irq(irq_clk);
-    clk_enabled--;
-  }
-
-  return;
-}
-
 int iec_releaseBus(void)
 {
   int abort = 0;
@@ -212,7 +198,6 @@ int iec_releaseBus(void)
   pinMode(IEC_CLK, INPUT);
   pinMode(IEC_DATA, INPUT);
   //abort = iec_waitForATNEnd();
-  iec_enableClockIRQ(0);
   iec_state = IECWaitState;
   return abort;
 }
@@ -224,8 +209,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   int abort;
 
 
-  atn = !digitalRead(IEC_ATN);
-  if (!atn && iec_state != IECListenState)
+  if (iec_state != IECListenState && iec_state != IECTalkState)
     return IRQ_HANDLED;
   
   // disable hard interrupts (remember them in flag 'flags')
@@ -234,6 +218,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   printk(KERN_NOTICE "IEC: clock\n");
   
   abort = 0;
+  atn = !digitalRead(IEC_ATN);
 
   val = iec_readByte();
   printk(KERN_NOTICE "IEC: Read: %03x\n", val);
@@ -251,22 +236,19 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
       case 0x20: /* Listen */
 	if (dev != 8)
 	  iec_releaseBus();
-	else {
+	else
 	  iec_state = IECListenState;
-	  iec_enableClockIRQ(1);
-	}
 	break;
 
       case 0x40: /* Talk */
 	if (dev != 8)
 	  iec_releaseBus();
-	else {
+	else
 	  iec_state = IECTalkState;
-	  iec_enableClockIRQ(1);
-	}
 	break;
 
       case 0x60: /* Channel */
+	iec_state = IECSendState;
 	break;
 
       case 0xE0: /* Open/Close */
@@ -294,7 +276,7 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
   
   atn = !digitalRead(IEC_ATN);
   if (atn) {
-    iec_enableClockIRQ(1);
+    iec_state = IECListenState;
     pinMode(IEC_CLK, INPUT);
     pinMode(IEC_DATA, OUTPUT);
   }
