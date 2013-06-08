@@ -37,6 +37,7 @@
 #define LABEL_CLK	"IEC clock pin"
 #define LABEL_DATA	"IEC data pin"
 #define LABEL_DEVICE	"cbm-iec driver"
+#define LABEL_WORK	"IEC work"
 
 #define DATA_EOI	0x100
 #define DATA_ATN	0x200
@@ -45,7 +46,8 @@ enum {
   IECWaitState = 1,
   IECListenState,
   IECTalkState,
-  IECSendState,
+  IECCanSendState,
+  IECDoSendState,
 };
 
 #define BCM2708_PERI_BASE   0x20000000
@@ -64,19 +66,30 @@ enum {
 							  ~(7 << (_p % 10) * 3)) | \
 							 ((mode) << (_p % 10) * 3);})
 
+struct iec_data {
+  uint8_t cmd, dev;
+  uint16_t len;
+  void *data;
+  int pos;
+};
+
 static short int irq_atn = 0, irq_clk = 0;
 static int iec_major = 60;
 static uint16_t *iec_buffer;
 static short iec_inpos, iec_outpos;
 static volatile uint32_t *gpio;
 static int iec_state = 0;
+static struct workqueue_struct *iec_wq;
 
 static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs);
 static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs);
+static void iec_sendData(struct work_struct *work);
 int iec_open(struct inode *inode, struct file *filp);
 int iec_close(struct inode *inode, struct file *filp);
 ssize_t iec_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos);
 ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_t *f_pos);
+
+DECLARE_WORK(iec_work, iec_sendData);
 
 struct file_operations iec_fops = {
  owner: THIS_MODULE,
@@ -94,20 +107,7 @@ int iec_readByte(void)
 
   
   pinMode(IEC_DATA, INPUT);
-
   abort = 0;
-#if 0
-  do_gettimeofday(&start);
-  while (!digitalRead(IEC_CLK)) {
-    do_gettimeofday(&now);
-    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
-    if (elapsed >= 100000) {
-      printk(KERN_NOTICE "IEC: Timeout waiting for talker\n");
-      abort = 1;
-      break;
-    }
-  }
-#endif
 
   do_gettimeofday(&start);
   for (eoi = 0; !abort && digitalRead(IEC_CLK); ) {
@@ -215,7 +215,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
 
-  printk(KERN_NOTICE "IEC: clock\n");
+  //printk(KERN_NOTICE "IEC: clock\n");
   
   abort = 0;
   atn = !digitalRead(IEC_ATN);
@@ -248,7 +248,8 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
 	break;
 
       case 0x60: /* Channel */
-	iec_state = IECSendState;
+	iec_state = IECCanSendState;
+	queue_work(iec_wq, &iec_work);
 	break;
 
       case 0xE0: /* Open/Close */
@@ -272,7 +273,7 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
 
-  printk(KERN_NOTICE "IEC: attention\n");
+  //printk(KERN_NOTICE "IEC: attention\n");
   
   atn = !digitalRead(IEC_ATN);
   if (atn) {
@@ -285,6 +286,141 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
   local_irq_restore(flags);
 
   return IRQ_HANDLED;
+}
+
+int iec_writeByte(int bits)
+{
+  struct timeval start, now;
+  int elapsed, len;
+  int abort = 0;
+
+
+  pinMode(IEC_CLK, INPUT);
+
+  do_gettimeofday(&start);
+  while (!digitalRead(IEC_DATA)) {
+    do_gettimeofday(&now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+    if (elapsed >= 100000) {
+      printk(KERN_NOTICE "IEC: Timeout waiting to send\n");
+      abort = 1;
+      break;
+    }
+  }
+
+  if (bits & DATA_EOI) {
+    do_gettimeofday(&start);
+    while (digitalRead(IEC_DATA)) {
+      do_gettimeofday(&now);
+      elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+      if (elapsed >= 100000) {
+	printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack\n");
+	abort = 1;
+	break;
+      }
+    }
+  }
+
+  pinMode(IEC_CLK, OUTPUT);
+
+  for (len = 0; !abort && len < 8; len++, bits >>= 1) {
+    pinMode(IEC_DATA, bits & 1);
+    pinMode(IEC_CLK, INPUT);
+    udelay(60);
+    pinMode(IEC_CLK, OUTPUT);
+  }
+
+  pinMode(IEC_DATA, INPUT);
+
+  do_gettimeofday(&start);
+  while (digitalRead(IEC_DATA)) {
+    do_gettimeofday(&now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+    if (elapsed >= 100000) {
+      printk(KERN_NOTICE "IEC: Timeout waiting for listener ack\n");
+      abort = 1;
+      break;
+    }
+  }
+
+  return abort;
+}
+
+static void iec_sendData(struct work_struct *work)
+{
+  struct timeval start, now;
+  int elapsed;
+  int abort = 0;
+  int bpos, blen;
+  int val;
+  static unsigned char buf[] = {
+    0x01, 0x04, 0x01, 0x01, 0x00, 0x00, 0x12, 0x22,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x22, 0x20, 0x30, 0x30, 0x20, 0x32, 0x41, 0x00,
+
+    0x01, 0x01, 0x75, 0x00, 0x20, 0x22, 0x41, 0x52,
+    0x4D, 0x59, 0x20, 0x4D, 0x4F, 0x56, 0x45, 0x53,
+    0x20, 0x31, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x20, 0x00,
+    
+    0x01, 0x01, 0x87, 0x00, 0x20, 0x22, 0x41, 0x52,
+    0x4D, 0x59, 0x20, 0x4D, 0x4F, 0x56, 0x45, 0x53,
+    0x20, 0x32, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x20, 0x00,
+
+    0x01, 0x01, 0x29, 0x00, 0x20, 0x20, 0x22, 0x41,
+    0x52, 0x4D, 0x59, 0x20, 0x4D, 0x4F, 0x56, 0x45,
+    0x53, 0x20, 0x50, 0x49, 0x43, 0x22, 0x20, 0x20,
+    0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x00,
+
+    0x01, 0x01, 0x01, 0x00, 0x20, 0x20, 0x20, 0x22,
+    0x45, 0x52, 0x52, 0x4F, 0x52, 0x43, 0x48, 0x41,
+    0x4E, 0x4E, 0x45, 0x4C, 0x22, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x00,
+
+    0x01, 0x01, 0x72, 0x01, 0x42, 0x4C, 0x4F, 0x43,
+    0x4B, 0x53, 0x20, 0x46, 0x52, 0x45, 0x45, 0x2E,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00
+  };
+
+  
+  if (iec_state == IECCanSendState) {
+    do_gettimeofday(&start);
+    while (!digitalRead(IEC_CLK)) {
+      do_gettimeofday(&now);
+      elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+      if (elapsed >= 100000) {
+	printk(KERN_NOTICE "IEC: Timeout waiting for start of talk\n");
+	abort = 1;
+	break;
+      }
+    }
+
+    if (!abort) {
+      pinMode(IEC_CLK, OUTPUT);
+      pinMode(IEC_DATA, INPUT);
+      iec_state = IECDoSendState;
+      printk(KERN_NOTICE "IEC: Ready to send\n");
+    }
+  }
+
+  for (bpos = 0, blen = sizeof(buf);
+       !abort && iec_state == IECDoSendState && bpos < blen;
+       bpos++) {
+    printk(KERN_NOTICE "IEC: sending %i of %i\n", bpos, blen);
+    val = buf[bpos];
+    if (bpos == blen - 1)
+      val |= DATA_EOI;
+    abort = iec_writeByte(val);
+    if (val & DATA_EOI) {
+      pinMode(IEC_CLK, INPUT);
+      iec_state = IECWaitState;
+    }
+  }
+  
+  return;
 }
 
 int iec_init(void)
@@ -363,6 +499,8 @@ int iec_init(void)
   
   printk(KERN_NOTICE "IEC module loaded\n");
 
+  iec_wq = create_singlethread_workqueue(LABEL_WORK);
+  
   return 0;
 
  fail_irqclk:
@@ -385,6 +523,7 @@ int iec_init(void)
 
 void iec_cleanup(void)
 {
+  destroy_workqueue(iec_wq);
   unregister_chrdev(iec_major, LABEL_DEVICE);
   kfree(iec_buffer);
 
