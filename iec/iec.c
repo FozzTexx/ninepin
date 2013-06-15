@@ -67,7 +67,10 @@ enum {
 							 ((mode) << (_p % 10) * 3);})
 
 struct iec_data {
-  uint8_t cmd, dev;
+  unsigned int command:3;
+  unsigned int device:5;
+  unsigned int secondary:4;
+  unsigned int channel:4;
   uint16_t len;
   void *data;
   int pos;
@@ -99,7 +102,7 @@ struct file_operations iec_fops = {
  release: iec_close
 };
 
-int iec_waitForSignal(int pin, int val, int delay)
+static inline int iec_waitForSignal(int pin, int val, int delay)
 {
   struct timeval start, now;
   int elapsed, abort = 0;
@@ -109,7 +112,7 @@ int iec_waitForSignal(int pin, int val, int delay)
   while (digitalRead(pin) != val) {
     do_gettimeofday(&now);
     elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
-    if (elapsed >= 10000) {
+    if (elapsed >= delay) {
       abort = 1;
       break;
     }
@@ -163,6 +166,10 @@ int iec_readByte(void)
     }
   }
 
+  /* For some reason if I put DATA low too fast the C64 doesn't see it
+     when it does the EOI. */
+  udelay(60);
+  
   pinMode(IEC_DATA, OUTPUT);
 
   if (abort)
@@ -207,12 +214,12 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   int abort;
 
 
-  printk(KERN_NOTICE "IEC: clock %i\n", iec_state);
+  //printk(KERN_NOTICE "IEC: clock %i\n", iec_state);
   if (iec_state != IECListenState && iec_state != IECTalkState && iec_state != IECCanSendState)
     return IRQ_HANDLED;
 
   if (iec_state == IECCanSendState) {
-    if (!iec_setupTalker())
+    //if (!iec_setupTalker())
       queue_work(iec_wq, &iec_work);
     return IRQ_HANDLED;
   }
@@ -310,13 +317,14 @@ int iec_writeByte(int bits)
 
 
   disable_irq(irq_clk);
-  printk(KERN_NOTICE "IEC: Write: %03x data: %i\n", bits, digitalRead(IEC_DATA));
+  //printk(KERN_NOTICE "IEC: Write: %03x data: %i\n", bits, digitalRead(IEC_DATA));
   pinMode(IEC_CLK, INPUT);
 
   if ((abort = iec_waitForSignal(IEC_DATA, 1, 100000)))
     printk(KERN_NOTICE "IEC: Timeout waiting to send\n");
 
-  if (!abort && bits & DATA_EOI) {
+  if (!abort && (bits & DATA_EOI)) {
+    printk("Doing EOI\n");
     if ((abort = iec_waitForSignal(IEC_DATA, 0, 100000)))
       printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack\n");
 
@@ -327,23 +335,30 @@ int iec_writeByte(int bits)
   pinMode(IEC_CLK, OUTPUT);
 
   for (len = 0; !abort && len < 8; len++, bits >>= 1) {
-    udelay(60);
     if (bits & 1)
       pinMode(IEC_DATA, INPUT);
     else
       pinMode(IEC_DATA, OUTPUT);
+    udelay(70);
     pinMode(IEC_CLK, INPUT);
-    udelay(60);
+    udelay(70);
+    pinMode(IEC_DATA, INPUT);
+    //udelay(5);
     pinMode(IEC_CLK, OUTPUT);
   }
 
-  pinMode(IEC_DATA, INPUT);
-  
-  if (!abort && (abort = iec_waitForSignal(IEC_DATA, 0, 1000))) 
+  if (!abort && !digitalRead(IEC_DATA)) {
+    printk(KERN_NOTICE "IEC: C64 freaked out\n");
+    abort = 1;
+  }
+
+  if (!abort && (abort = iec_waitForSignal(IEC_DATA, 0, 10000))) {
     printk(KERN_NOTICE "IEC: Timeout waiting for listener ack\n");
-  
+    abort = 0;
+  }
+
+  udelay(100);
   enable_irq(irq_clk);
-  printk("CLK: %i\n", digitalRead(IEC_CLK));
   
   return abort;
 }
@@ -387,6 +402,9 @@ static void iec_sendData(struct work_struct *work)
 
 
   abort = 0;
+  if (iec_state == IECCanSendState)
+    abort = iec_setupTalker();
+  
   for (bpos = 0, blen = sizeof(buf);
        !abort && iec_state == IECDoSendState && bpos < blen;
        bpos++) {
