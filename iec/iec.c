@@ -30,8 +30,10 @@
 #define IEC_BUFSIZE	1024
 
 #define IEC_ATN		25
-#define IEC_CLK		8
-#define IEC_DATA	7
+#define IEC_CLKIN	8
+#define IEC_DATAIN	7
+#define IEC_CLKOUT	10
+#define IEC_DATAOUT	9
 
 #define LABEL_ATN	"IEC attention pin"
 #define LABEL_CLK	"IEC clock pin"
@@ -44,6 +46,7 @@
 
 enum {
   IECWaitState = 1,
+  IECAttentionState,
   IECListenState,
   IECTalkState,
   IECCanSendState,
@@ -108,6 +111,7 @@ static inline int iec_waitForSignal(int pin, int val, int delay)
   int elapsed, abort = 0;
 
 
+  udelay(2);
   do_gettimeofday(&start);
   while (digitalRead(pin) != val) {
     do_gettimeofday(&now);
@@ -123,68 +127,74 @@ static inline int iec_waitForSignal(int pin, int val, int delay)
 
 int iec_readByte(void)
 {
-  int eoi, abort, elapsed;
+  int eoi, abort;
   int len, bits;
-  struct timeval start, now;
 
-  
+
+#if 0
   pinMode(IEC_DATA, INPUT);
-  abort = 0;
+#else
+  digitalWrite(IEC_DATAOUT, HIGH);
+#endif
 
-  do_gettimeofday(&start);
-  for (eoi = 0; !abort && digitalRead(IEC_CLK); ) {
-    do_gettimeofday(&now);
-    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+  abort = eoi = 0;
+  if (iec_waitForSignal(IEC_CLKIN, 0, 200)) {
+    eoi = DATA_EOI;
 
-    if (!eoi && elapsed >= 200) {
-      pinMode(IEC_DATA, OUTPUT);
-      udelay(80);
-      pinMode(IEC_DATA, INPUT);
-      eoi = 1;
-    }
+#if 0
+    pinMode(IEC_DATA, OUTPUT);
+    udelay(80);
+    pinMode(IEC_DATA, INPUT);
+#else
+    digitalWrite(IEC_DATAOUT, LOW);
+    udelay(80);
+    digitalWrite(IEC_DATAOUT, HIGH);
+#endif
 
-    if (elapsed > 10000) {
+    if ((abort = iec_waitForSignal(IEC_CLKIN, 0, 10000)))
       printk(KERN_NOTICE "IEC: Timeout during start\n");
-      abort = 1;
-      break;
-    }
   }
 
-  for (len = bits = 0; !abort && len < 8; len++) {
-    if ((abort = iec_waitForSignal(IEC_CLK, 1, 10000))) {
+  for (len = 0, bits = eoi; !abort && len < 8; len++) {
+    if ((abort = iec_waitForSignal(IEC_CLKIN, 1, 150))) {
       printk(KERN_NOTICE "IEC: timeout waiting for bit %i\n", len);
       break;
     }
 
-    if (digitalRead(IEC_DATA))
+    if (digitalRead(IEC_DATAIN))
       bits |= 1 << len;
 
-    if (iec_waitForSignal(IEC_CLK, 0, 10000)) {
+    if (iec_waitForSignal(IEC_CLKIN, 0, 150)) {
       printk(KERN_NOTICE "IEC: Timeout after bit %i\n", len);
       if (len < 7)
 	abort = 1;
     }
   }
 
-  /* For some reason if I put DATA low too fast the C64 doesn't see it
-     when it does the EOI. */
-  udelay(60);
-  
+#if 0
   pinMode(IEC_DATA, OUTPUT);
+#else
+  digitalWrite(IEC_DATAOUT, LOW);
+#endif
 
   if (abort)
     return -1;
 
-  if (eoi)
-    bits |= DATA_EOI;
   return bits;
 }
   
 void iec_releaseBus(void)
 {
+  printk(KERN_NOTICE "IEC: releasing bus\n");
+  udelay(50);
+#if 0
   pinMode(IEC_CLK, INPUT);
   pinMode(IEC_DATA, INPUT);
-  iec_state = IECWaitState;
+#else
+  digitalWrite(IEC_CLKOUT, HIGH);
+  digitalWrite(IEC_DATAOUT, HIGH);
+#endif
+  //iec_state = IECWaitState;
   return;
 }
 
@@ -194,12 +204,17 @@ int iec_setupTalker(void)
 
 
   abort = iec_waitForSignal(IEC_ATN, 1, 1000000);  
-  if (!abort && (abort = iec_waitForSignal(IEC_CLK, 1, 100000)))
+  if (!abort && (abort = iec_waitForSignal(IEC_CLKIN, 1, 100000)))
     printk(KERN_NOTICE "IEC: Timeout waiting for start of talk\n");
 
   if (!abort) {
+#if 0
     pinMode(IEC_DATA, INPUT);
     pinMode(IEC_CLK, OUTPUT);
+#else
+    digitalWrite(IEC_DATAOUT, HIGH);
+    digitalWrite(IEC_CLKOUT, LOW);
+#endif
     iec_state = IECDoSendState;
     printk(KERN_NOTICE "IEC: Ready to send\n");
   }
@@ -207,6 +222,7 @@ int iec_setupTalker(void)
   return abort;
 }
 
+#if 1
 static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
 {
   unsigned long flags;
@@ -214,8 +230,8 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   int abort;
 
 
-  //printk(KERN_NOTICE "IEC: clock %i\n", iec_state);
-  if (iec_state != IECListenState && iec_state != IECTalkState && iec_state != IECCanSendState)
+  printk(KERN_NOTICE "IEC: clock %i\n", iec_state);
+  if (iec_state == IECWaitState || iec_state == IECDoSendState)
     return IRQ_HANDLED;
 
   if (iec_state == IECCanSendState) {
@@ -226,7 +242,6 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
-
   
   abort = 0;
   atn = !digitalRead(IEC_ATN);
@@ -237,8 +252,10 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
     iec_buffer[iec_inpos] = val;
     iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
 
-    if (val & DATA_EOI)
+    if (val & DATA_EOI) {
       iec_releaseBus();
+      iec_state = IECWaitState;
+    }
     else if (atn) {
       cmd = val & 0xe0;
       dev = val & 0x1f;
@@ -246,9 +263,10 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
       switch (cmd) {
       case 0x20: /* Listen */
 	if (dev != 8) {
-	  /* FIXME - ignore rest of commands sent under ATN */
-	  if (dev == 0x1f)
-	    iec_releaseBus();
+	  /* FIXME - ignore everything until ATN goes high */
+	  if (dev == 31)
+	    iec_state = IECWaitState;
+	  iec_releaseBus();
 	}
 	else
 	  iec_state = IECListenState;
@@ -256,9 +274,10 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
 
       case 0x40: /* Talk */
 	if (dev != 8) {
-	  /* FIXME - ignore rest of commands sent under ATN */
-	  if (dev == 0x1f)
-	    iec_releaseBus();
+	  /* FIXME - ignore everything until ATN goes high */
+	  if (dev == 31)
+	    iec_state = IECWaitState;
+	  iec_releaseBus();
 	}
 	else
 	  iec_state = IECTalkState;
@@ -285,24 +304,80 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
 
   return IRQ_HANDLED;
 }
+#else
+static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
+{
+  unsigned long flags;
+  struct timeval start, now;
+  int elapsed;
+  int abort;
+
+
+  //printk(KERN_NOTICE "IEC: go low test\n");
+  
+  local_irq_save(flags);
+
+  do_gettimeofday(&start);
+  digitalWrite(IEC_DATAOUT, HIGH);
+  if ((abort = iec_waitForSignal(IEC_CLKIN, 0, 10000)))
+    printk(KERN_NOTICE "IEC: no clock low 1\n");
+
+  if (!abort) {
+    do_gettimeofday(&now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+    printk(KERN_NOTICE "IEC: respond to HIGH 1 in %i usec\n", elapsed);
+  }
+  
+  digitalWrite(IEC_DATAOUT, LOW);
+
+  if (!abort) {
+    do_gettimeofday(&start);
+    if ((abort = iec_waitForSignal(IEC_CLKIN, 1, 10000)))
+      printk(KERN_NOTICE "IEC: no clock high 2\n");
+
+    if (!abort) {
+      do_gettimeofday(&now);
+      elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+      printk(KERN_NOTICE "IEC: respond to low 1 in %i usec\n", elapsed);
+
+      do_gettimeofday(&start);
+      digitalWrite(IEC_DATAOUT, HIGH);
+      if ((abort = iec_waitForSignal(IEC_CLKIN, 0, 10000)))
+	printk(KERN_NOTICE "IEC: no clock low 3\n");
+
+      if (!abort) {
+	do_gettimeofday(&now);
+	elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
+	printk(KERN_NOTICE "IEC: respond to HIGH 2 in %i usec\n", elapsed);
+      }
+  
+      digitalWrite(IEC_DATAOUT, LOW);
+    }
+  }
+  
+  local_irq_restore(flags);
+
+  return IRQ_HANDLED;
+}
+#endif
 
 static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
 {
   unsigned long flags;
-  int atn;
 
 
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
 
   printk(KERN_NOTICE "IEC: attention\n");
-  
-  atn = !digitalRead(IEC_ATN);
-  if (atn) {
-    iec_state = IECListenState;
-    pinMode(IEC_CLK, INPUT);
-    pinMode(IEC_DATA, OUTPUT);
-  }
+  iec_state = IECAttentionState;
+#if 0
+  pinMode(IEC_CLK, INPUT);
+  pinMode(IEC_DATA, OUTPUT);
+#else
+  digitalWrite(IEC_CLKOUT, HIGH);
+  digitalWrite(IEC_DATAOUT, LOW);
+#endif
   
   // restore hard interrupts
   local_irq_restore(flags);
@@ -318,47 +393,71 @@ int iec_writeByte(int bits)
 
   disable_irq(irq_clk);
   //printk(KERN_NOTICE "IEC: Write: %03x data: %i\n", bits, digitalRead(IEC_DATA));
+#if 0
   pinMode(IEC_CLK, INPUT);
+#else
+  digitalWrite(IEC_CLKOUT, HIGH);
+#endif
 
-  if ((abort = iec_waitForSignal(IEC_DATA, 1, 100000)))
+  if ((abort = iec_waitForSignal(IEC_DATAIN, 1, 100000)))
     printk(KERN_NOTICE "IEC: Timeout waiting to send\n");
 
   if (!abort && (bits & DATA_EOI)) {
     printk("Doing EOI\n");
-    if ((abort = iec_waitForSignal(IEC_DATA, 0, 100000)))
+    if ((abort = iec_waitForSignal(IEC_DATAIN, 0, 100000)))
       printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack\n");
 
-    if (!abort && (abort = iec_waitForSignal(IEC_DATA, 1, 100000)))
+    if (!abort && (abort = iec_waitForSignal(IEC_DATAIN, 1, 100000)))
       printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack finish\n");
   }
 
+#if 0
   pinMode(IEC_CLK, OUTPUT);
+#else
+  digitalWrite(IEC_CLKOUT, LOW);
+#endif
+  udelay(30);
 
   for (len = 0; !abort && len < 8; len++, bits >>= 1) {
+#if 0
     if (bits & 1)
       pinMode(IEC_DATA, INPUT);
     else
       pinMode(IEC_DATA, OUTPUT);
+#else
+    digitalWrite(IEC_DATAOUT, bits & 1);
+#endif
     udelay(70);
+#if 0
     pinMode(IEC_CLK, INPUT);
+#else
+    digitalWrite(IEC_CLKOUT, HIGH);
+#endif
     udelay(70);
+#if 0
     pinMode(IEC_DATA, INPUT);
-    //udelay(5);
     pinMode(IEC_CLK, OUTPUT);
+#else
+    digitalWrite(IEC_DATAOUT, HIGH);
+    digitalWrite(IEC_CLKOUT, LOW);
+#endif
   }
 
-  if (!abort && !digitalRead(IEC_DATA)) {
+#if 0
+  if (!abort && !digitalRead(IEC_DATAIN)) {
     printk(KERN_NOTICE "IEC: C64 freaked out\n");
     abort = 1;
   }
+#endif
 
-  if (!abort && (abort = iec_waitForSignal(IEC_DATA, 0, 10000))) {
+  if (!abort && (abort = iec_waitForSignal(IEC_DATAIN, 0, 10000))) {
     printk(KERN_NOTICE "IEC: Timeout waiting for listener ack\n");
     abort = 0;
   }
 
-  udelay(100);
   enable_irq(irq_clk);
+
+  udelay(100);
   
   return abort;
 }
@@ -416,6 +515,7 @@ static void iec_sendData(struct work_struct *work)
     if (val & DATA_EOI) {
       printk(KERN_NOTICE "IEC: releasing bus\n");
       iec_releaseBus();
+      iec_state = IECWaitState;
     }
   }
   
@@ -438,12 +538,20 @@ int iec_init(void)
   gpio = ioremap(GPIO_BASE, 4096);
 
   pinMode(IEC_ATN, INPUT);
-  pinMode(IEC_CLK, INPUT);
-  pinMode(IEC_DATA, INPUT);
+  pinMode(IEC_CLKIN, INPUT);
+  pinMode(IEC_DATAIN, INPUT);
 
+#if 0
   digitalWrite(IEC_CLK, LOW);
   digitalWrite(IEC_DATA, LOW);
+#else
+  pinMode(IEC_CLKOUT, OUTPUT);
+  pinMode(IEC_DATAOUT, OUTPUT);
 
+  digitalWrite(IEC_CLKOUT, HIGH);
+  digitalWrite(IEC_DATAOUT, HIGH);
+#endif
+  
   if ((result = register_chrdev(iec_major, LABEL_DEVICE, &iec_fops)) < 0) {
     printk(KERN_NOTICE "IEC: cannot obtain major number %i\n", iec_major);
     goto fail_chrdev;
@@ -460,11 +568,11 @@ int iec_init(void)
     printk(KERN_NOTICE "IEC: GPIO request faiure: %s\n", LABEL_ATN);
     goto fail_atn;
   }
-  if ((result = gpio_request(IEC_CLK, LABEL_CLK))) {
+  if ((result = gpio_request(IEC_CLKIN, LABEL_CLK))) {
     printk(KERN_NOTICE "IEC: GPIO request faiure: %s\n", LABEL_CLK);
     goto fail_clk;
   }
-  if ((result = gpio_request(IEC_DATA, LABEL_DATA))) {
+  if ((result = gpio_request(IEC_DATAIN, LABEL_DATA))) {
     printk(KERN_NOTICE "IEC: GPIO request faiure: %s\n", LABEL_DATA);
     goto fail_data;
   }
@@ -475,7 +583,7 @@ int iec_init(void)
     goto fail_mapatn;
   }
 
-  if ((irq_clk = gpio_to_irq(IEC_CLK)) < 0) {
+  if ((irq_clk = gpio_to_irq(IEC_CLKIN)) < 0) {
     printk(KERN_NOTICE "IEC: GPIO to IRQ mapping faiure %s\n", LABEL_CLK);
     result = irq_clk;
     goto fail_mapclk;
@@ -507,9 +615,9 @@ int iec_init(void)
  fail_irqatn:
  fail_mapclk:
  fail_mapatn:
-  gpio_free(IEC_DATA);
+  gpio_free(IEC_DATAIN);
  fail_data:
-  gpio_free(IEC_CLK);
+  gpio_free(IEC_CLKIN);
  fail_clk:
   gpio_free(IEC_ATN);
  fail_atn:
@@ -529,8 +637,8 @@ void iec_cleanup(void)
   free_irq(irq_atn, LABEL_DEVICE);
   free_irq(irq_clk, LABEL_DEVICE);
   gpio_free(IEC_ATN);
-  gpio_free(IEC_CLK);
-  gpio_free(IEC_DATA);
+  gpio_free(IEC_CLKIN);
+  gpio_free(IEC_DATAIN);
 
   iounmap(gpio);
   printk(KERN_NOTICE "IEC module removed\n");
