@@ -44,8 +44,6 @@
 #define DATA_EOI	0x100
 #define DATA_ATN	0x200
 
-#define C64SLOWDOWN	20 /* FIXME - figure out a way to calculate this delay at runtime */
-
 enum {
   IECWaitState = 1,
   IECAttentionState,
@@ -88,6 +86,7 @@ static short iec_inpos, iec_outpos;
 static volatile uint32_t *gpio;
 static int iec_state = 0;
 static struct workqueue_struct *iec_wq;
+static int c64slowdown = 10;
 
 static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs);
 static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs);
@@ -130,7 +129,8 @@ int iec_readByte(void)
 {
   int eoi, abort;
   int len, bits;
-
+  struct timeval start, now;
+  int elapsed = 0;
 
 #if 0
   pinMode(IEC_DATA, INPUT);
@@ -138,22 +138,37 @@ int iec_readByte(void)
   digitalWrite(IEC_DATAOUT, HIGH);
 #endif
 
-  abort = eoi = 0;
-  if (iec_waitForSignal(IEC_CLKIN, 0, 200)) {
-    eoi = DATA_EOI;
+  do_gettimeofday(&start);
+  for (abort = eoi = 0; !abort && digitalRead(IEC_CLKIN); ) {
+    do_gettimeofday(&now);
+    elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
 
+    if (!eoi && elapsed >= 200) {
 #if 0
-    pinMode(IEC_DATA, OUTPUT);
-    udelay(C64SLOWDOWN * 2);
-    pinMode(IEC_DATA, INPUT);
+      pinMode(IEC_DATA, OUTPUT);
+      udelay(c64slowdown*2);
+      pinMode(IEC_DATA, INPUT);
 #else
-    digitalWrite(IEC_DATAOUT, LOW);
-    udelay(C64SLOWDOWN * 2);
-    digitalWrite(IEC_DATAOUT, HIGH);
+      digitalWrite(IEC_DATAOUT, LOW);
+      udelay(c64slowdown*2);
+      digitalWrite(IEC_DATAOUT, HIGH);
 #endif
+      eoi = DATA_EOI;
+    }
 
-    if ((abort = iec_waitForSignal(IEC_CLKIN, 0, 10000)))
+    if (elapsed > 10000) {
       printk(KERN_NOTICE "IEC: Timeout during start\n");
+      abort = 1;
+      break;
+    }
+  }
+
+  if (elapsed < 60) {
+    len = elapsed - c64slowdown;
+    if (len > 0 && c64slowdown / 10 < len && len > 5) {
+      c64slowdown = elapsed;
+      printk(KERN_NOTICE "IEC: calibrating delay: %i\n", elapsed);
+    }
   }
 
   for (len = 0, bits = eoi; !abort && len < 8; len++) {
@@ -177,7 +192,7 @@ int iec_readByte(void)
 #else
   digitalWrite(IEC_DATAOUT, LOW);
 #endif
-  udelay(C64SLOWDOWN);
+  udelay(c64slowdown);
 
   if (abort)
     return -1;
@@ -187,7 +202,6 @@ int iec_readByte(void)
   
 void iec_releaseBus(void)
 {
-  printk(KERN_NOTICE "IEC: releasing bus\n");
 #if 0
   pinMode(IEC_CLK, INPUT);
   pinMode(IEC_DATA, INPUT);
@@ -195,7 +209,7 @@ void iec_releaseBus(void)
   digitalWrite(IEC_CLKOUT, HIGH);
   digitalWrite(IEC_DATAOUT, HIGH);
 #endif
-  udelay(C64SLOWDOWN);
+  udelay(c64slowdown);
   return;
 }
 
@@ -216,9 +230,8 @@ int iec_setupTalker(void)
     digitalWrite(IEC_DATAOUT, HIGH);
     digitalWrite(IEC_CLKOUT, LOW);
 #endif
-    udelay(C64SLOWDOWN);
+    udelay(c64slowdown);
     iec_state = IECDoSendState;
-    printk(KERN_NOTICE "IEC: Ready to send\n");
   }
 
   return abort;
@@ -231,7 +244,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   int abort;
 
 
-  printk(KERN_NOTICE "IEC: clock %i\n", iec_state);
+  //printk(KERN_NOTICE "IEC: clock %i\n", iec_state);
   if (iec_state == IECWaitState || iec_state == IECDoSendState)
     return IRQ_HANDLED;
 
@@ -248,7 +261,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   atn = !digitalRead(IEC_ATN);
 
   val = iec_readByte();
-  printk(KERN_NOTICE "IEC: Read: %03x\n", val);
+  //printk(KERN_NOTICE "IEC: Read: %03x\n", val);
   if (val >= 0) {
     iec_buffer[iec_inpos] = val;
     iec_inpos = (iec_inpos + 1) % IEC_BUFSIZE;
@@ -265,7 +278,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
 	  /* FIXME - ignore everything until ATN goes high */
 	  if (dev == 31)
 	    iec_state = IECWaitState;
-	  udelay(C64SLOWDOWN);
+	  udelay(c64slowdown);
 	  iec_releaseBus();
 	}
 	else
@@ -277,7 +290,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
 	  /* FIXME - ignore everything until ATN goes high */
 	  if (dev == 31)
 	    iec_state = IECWaitState;
-	  udelay(C64SLOWDOWN);
+	  udelay(c64slowdown);
 	  iec_releaseBus();
 	}
 	else
@@ -314,7 +327,7 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
   // disable hard interrupts (remember them in flag 'flags')
   local_irq_save(flags);
 
-  printk(KERN_NOTICE "IEC: attention\n");
+  //printk(KERN_NOTICE "IEC: attention\n");
   iec_state = IECAttentionState;
 #if 0
   pinMode(IEC_CLK, INPUT);
@@ -322,8 +335,8 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
 #else
   digitalWrite(IEC_CLKOUT, HIGH);
   digitalWrite(IEC_DATAOUT, LOW);
-  udelay(C64SLOWDOWN);
 #endif
+  udelay(c64slowdown);
   
   // restore hard interrupts
   local_irq_restore(flags);
@@ -351,7 +364,7 @@ int iec_writeByte(int bits)
     printk(KERN_NOTICE "IEC: Timeout waiting to send\n");
 
   if (!abort && (bits & DATA_EOI)) {
-    printk(KERN_NOTICE "IEC: sending EOI\n");
+    //printk(KERN_NOTICE "IEC: sending EOI\n");
     if ((abort = iec_waitForSignal(IEC_DATAIN, 0, 100000)))
       printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack\n");
 
@@ -365,7 +378,7 @@ int iec_writeByte(int bits)
   digitalWrite(IEC_CLKOUT, LOW);
 #endif
   local_irq_restore(flags);
-  udelay(C64SLOWDOWN);
+  udelay(c64slowdown);
   
   for (len = 0; !abort && len < 8; len++, bits >>= 1) {
     if (iec_state != IECDoSendState) {
@@ -380,13 +393,13 @@ int iec_writeByte(int bits)
 #else
     digitalWrite(IEC_DATAOUT, bits & 1);
 #endif
-    udelay(C64SLOWDOWN*3);
+    udelay(c64slowdown*2);
 #if 0
     pinMode(IEC_CLK, INPUT);
 #else
     digitalWrite(IEC_CLKOUT, HIGH);
 #endif
-    udelay(C64SLOWDOWN*3);
+    udelay(c64slowdown*2);
 #if 0
     pinMode(IEC_DATA, INPUT);
     pinMode(IEC_CLK, OUTPUT);
@@ -403,7 +416,7 @@ int iec_writeByte(int bits)
 
   enable_irq(irq_clk);
 
-  udelay(C64SLOWDOWN * 2);
+  udelay(c64slowdown);
   
   return abort;
 }
@@ -453,16 +466,14 @@ static void iec_sendData(struct work_struct *work)
   for (bpos = 0, blen = sizeof(buf);
        !abort && iec_state == IECDoSendState && bpos < blen;
        bpos++) {
-    printk(KERN_NOTICE "IEC: sending %i of %i\n", bpos, blen);
+    //printk(KERN_NOTICE "IEC: sending %i of %i\n", bpos, blen);
     val = buf[bpos];
     if (bpos == blen - 1)
       val |= DATA_EOI;
     abort = iec_writeByte(val);
   }
 
-  if (!abort)
-    udelay(C64SLOWDOWN * 2);
-  else {
+  if (abort) {
     iec_state = IECWaitState;
     iec_releaseBus();
   }
