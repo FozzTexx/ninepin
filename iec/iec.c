@@ -441,6 +441,9 @@ void iec_closeIO(int inout)
 
   if (!(device = iec_openDevices[iec_curDevice]))
     return;
+
+  /* FIXME - if we are holding the bus because of this device, release the bus */
+  
   if (inout == INPUT)
     chain = &device->in;
   else
