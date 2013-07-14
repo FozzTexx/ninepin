@@ -13,6 +13,7 @@
 #include <time.h>
 #include <sys/select.h>
 #include <sys/param.h>
+#include <string.h>
 
 #define JOYSTICK	0
 #define ATARI_UP	0x01
@@ -159,42 +160,14 @@ void diskDrive()
 {
   int fd;
   fd_set rd, ex;
-  unsigned char buf[256];
   int len;
   iec_data header;
   unsigned char *data = NULL;
   int dlen = 0;
-  static unsigned char hack[] = {
-    0x01, 0x04, 0x01, 0x01, 0x00, 0x00, 0x12, 0x22,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x22, 0x20, 0x30, 0x30, 0x20, 0x32, 0x41, 0x00,
-
-    0x01, 0x01, 0x75, 0x00, 0x20, 0x22, 0x41, 0x52,
-    0x4D, 0x59, 0x20, 0x4D, 0x4F, 0x56, 0x45, 0x53,
-    0x20, 0x31, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x20, 0x00,
-    
-    0x01, 0x01, 0x87, 0x00, 0x20, 0x22, 0x41, 0x52,
-    0x4D, 0x59, 0x20, 0x4D, 0x4F, 0x56, 0x45, 0x53,
-    0x20, 0x32, 0x22, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x20, 0x00,
-
-    0x01, 0x01, 0x29, 0x00, 0x20, 0x20, 0x22, 0x41,
-    0x52, 0x4D, 0x59, 0x20, 0x4D, 0x4F, 0x56, 0x45,
-    0x53, 0x20, 0x50, 0x49, 0x43, 0x22, 0x20, 0x20,
-    0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x20, 0x00,
-
-    0x01, 0x01, 0x01, 0x00, 0x20, 0x20, 0x20, 0x22,
-    0x45, 0x52, 0x52, 0x4F, 0x52, 0x43, 0x48, 0x41,
-    0x4E, 0x4E, 0x45, 0x4C, 0x22, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x50, 0x52, 0x47, 0x20, 0x20, 0x00,
-
-    0x01, 0x01, 0x72, 0x01, 0x42, 0x4C, 0x4F, 0x43,
-    0x4B, 0x53, 0x20, 0x46, 0x52, 0x45, 0x45, 0x2E,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
-    0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00
-  };
+  int cmd, dev, sub, chan;
+  char filename[1024], exten[10];
+  FILE *file;
+  char buf[256];
 
 
   fd = open("/dev/iec8", O_RDWR);
@@ -207,28 +180,81 @@ void diskDrive()
     if (FD_ISSET(fd, &rd)) {
       len = read(fd, &header, sizeof(header));
       fprintf(stderr, "Data %i\n", header.len);
-      if (dlen < header.len) {
-	dlen = header.len;
+      if (dlen < header.len + 1) {
+	dlen = header.len + 1;
 	data = realloc(data, dlen);
       }
-      if (header.len)
+      if (header.len) {
 	len = read(fd, data, header.len);
+	data[header.len] = 0;
+      }
 
-      switch (header.command & 0xe0) {
+      cmd = header.command & 0xe0;
+      dev = header.command & 0x1f;
+      sub = header.channel & 0xf0;
+      chan = header.channel & 0x0f;
+      fprintf(stderr, "Command: %02x %02x %02x %02x\n", cmd, dev, sub, chan);
+      
+      switch (cmd) {
       case IECListenCommand:
-	if ((header.channel & 0xf0) == 0xf0) {
-	  /* Opening a file */
-	  /* FIXME - go find a file with the name provided */
+	switch (sub) {
+	case IECOpenCommand:
+	  fprintf(stderr, "Opening %s\n", data);
+	  if (header.len == 1 && data[0] == '$') {
+	    /* Directory listing */
+	  }
+	  else {
+	    /* FIXME - make sure filename fits */
+	    strcpy(filename, (char *) data);
+	    /* Will wait until next command to see if it is a read or
+	       write and check if the file exists */
+	  }
+	  break;
+
+	case IECCloseCommand:
+	  break;
+
+	case IECChannelCommand:
+	  /* Save data */
+	  if (chan == 1)
+	    strcpy(exten, "PRG");
+	  strcat(filename, ".");
+	  strcat(filename, exten);
+	  file = fopen(filename, "w");
+	  fwrite(data, header.len, 1, file);
+	  fclose(file);
+	  fprintf(stderr, "Saved it to %s\n", filename);
+	  break;
 	}
 	break;
 
       case IECTalkCommand:
-	if ((header.channel & 0xf0) == IECChannelCommand) {
-	  fprintf(stderr, "Sending file contents\n");
-	  header.command = header.channel = 0;
-	  header.len = sizeof(hack);
+	if (sub == IECChannelCommand) {
+	  if (chan == 0)
+	    strcpy(exten, "PRG");
+	  strcat(filename, ".");
+	  strcat(filename, exten);
+	  fprintf(stderr, "Sending %s\n", filename);
+	  header.command = 0;
+	  header.channel = chan;
+	  header.len = 0;
+	  
+	  if ((file = fopen(filename, "r"))) {
+	    while ((len = fread(buf, 1, sizeof(buf), file)) > 0) {
+	      if (dlen < header.len + len) {
+		dlen = header.len + len;
+		data = realloc(data, dlen);
+	      }
+
+	      memmove(&data[header.len], buf, len);
+	      header.len += len;
+	    }
+	    fclose(file);
+	  }
+	  
 	  write(fd, (void *) &header, sizeof(header));
-	  write(fd, hack, header.len);
+	  if (header.len)
+	    write(fd, data, header.len);
 	}
 	break;
       }

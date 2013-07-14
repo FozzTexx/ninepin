@@ -29,6 +29,8 @@ enum {
   IECListenCommand = 0x20,
   IECTalkCommand = 0x40,
   IECChannelCommand = 0x60,
-  IECOpenCommand = 0xe0,
+  IECCloseCommand = 0xe0,
+  IECOpenCommand = 0xf0,
 };
 
+#define IECFileCommand IECCloseCommand
