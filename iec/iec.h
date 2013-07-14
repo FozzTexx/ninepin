@@ -17,10 +17,18 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/types.h>
+#include <stdint.h>
 
 typedef struct {
   unsigned char command;
   unsigned char channel;
   uint16_t len;
 } iec_data;
+
+enum {
+  IECListenCommand = 0x20,
+  IECTalkCommand = 0x40,
+  IECChannelCommand = 0x60,
+  IECOpenCommand = 0xe0,
+};
+

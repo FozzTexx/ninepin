@@ -82,13 +82,6 @@ enum {
   IECOutputState,
 };
 
-enum {
-  IECListenCommand = 0x20,
-  IECTalkCommand = 0x40,
-  IECChannelCommand = 0x60,
-  IECOpenCommand = 0xe0,
-};
-
 typedef struct {
   unsigned char data[IEC_BUFSIZE];
   void *next;
@@ -354,7 +347,7 @@ void iec_channelIO(int val, int inout)
   if (!chain->cur)
     return;
 
-  if (cmd == IECOpenCommand && dev == 0x00)
+  if (cmd == IECOpenCommand && dev == 0x00) /* Close */
     chain->cur = NULL;
   else
     chain->cur->header.channel = val & 0xff;
