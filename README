@@ -1,0 +1,39 @@
+ninepin: A utility to adapt computers of the past to modern times.
+Copyright 2013 by Chris Osborn <fozztexx@fozztexx.com>
+
+See COPYING file for detailed information on terms of copying.
+
+----------------------------------------
+Ninepin is a combination of a user space program and kernel module
+which implements the IEC serial protocol on the Raspberry Pi using
+GPIO, as used on the Commodore 64. The signalling is implemented in a
+Linux Kernel Module in order to use interrupts. There are only 2
+places where interrupts are disabled during processing. I had to use
+looping for delays since there was no way to do microsecond delays in
+the kernel.
+
+The driver supports both a 3 wire and a 5 wire interface, depending on
+what kind of level shifters you have available (and how brave you
+are). Switching between 3 wire and 5 wire currently requires
+recompiling the module, it should probably be an option when doing the
+insmod.
+
+If you are using the 3 pin mode, then the CLK and DATA pins are used
+for both input and output. You can either use a bidirection 3.3V to 5V
+level shifter, or do what I did and use some resistors to make a
+voltage divider. The voltage divider works fine for me, but I only
+have the C64 and the Raspberry Pi on the bus. Adding other devices
+could cause the voltage levels to increase to more than the Raspberry
+Pi GPIO pins can tolerate.
+
+In 5 pin mode, 3 pins are used to read the signals, and 2 others are
+used to send output. This allows the use of unidirectional level
+shifters such as a 74HCT245 and CD4050.
+
+ninepin also has some routines for converting a USB gamepad into a
+ninepin joystick interface (hence the name) like used on the Atari
+2600 and Commodore 64. It currently only maps the directional and a
+single button for player 1. Additional chips are required to be
+connected to the GPIO. I'm using a couple of CD4016 switches and a
+74595 shift register.
+
