@@ -249,7 +249,6 @@ void diskDrive()
 	    strcpy(exten, "PRG");
 	  strcat(filename, ".");
 	  strcat(filename, exten);
-	  fprintf(stderr, "Sending %s\n", filename);
 	  header.command = 0;
 	  header.channel = chan;
 	  header.len = 0;
@@ -268,8 +267,12 @@ void diskDrive()
 	  }
 	  
 	  write(fd, (void *) &header, sizeof(header));
-	  if (header.len)
+	  if (header.len) {
+	    fprintf(stderr, "Sending %s\n", filename);
 	    write(fd, data, header.len);
+	  }
+	  else
+	    fprintf(stderr, "No such file %s\n", filename);
 	}
 	break;
       }
