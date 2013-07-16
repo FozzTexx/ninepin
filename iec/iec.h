@@ -17,7 +17,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#include <stdint.h>
+#include <linux/types.h>
 
 typedef struct {
   unsigned char command;
