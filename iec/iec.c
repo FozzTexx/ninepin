@@ -267,7 +267,7 @@ void iec_channelIO(int val, int inout)
   if (!chain->cur)
     return;
 
-  if (cmd == IECOpenCommand && dev == 0x00) /* Close */
+  if (cmd == IECCloseCommand && dev == 0x00) /* Close */
     chain->cur = NULL;
   else
     chain->cur->header.channel = val & 0xff;
@@ -579,7 +579,7 @@ static void iec_processData(struct work_struct *work)
 	}
 	break;
 
-      case IECOpenCommand:
+      case IECFileCommand:
 	if (dev == 0x00)
 	  iec_closeIO(INPUT);
 	else
