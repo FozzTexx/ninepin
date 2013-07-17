@@ -17,7 +17,11 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#ifdef __KERNEL__
 #include <linux/types.h>
+#else
+#include <stdint.h>
+#endif
 
 typedef struct {
   unsigned char command;

@@ -275,13 +275,13 @@ void iec_channelIO(int val, int inout)
   return;
 }
 
-void iec_appendIO(int val, int inout)
+static inline void iec_appendData(char *buf, int buflen, int inout)
 {
   iec_device *device;
   iec_chain *chain;
   iec_io *io;
   iec_linkedData *data, *last;
-  int pos;
+  int pos, count;
   
 
   if (!(device = iec_openDevices[iec_curDevice]))
@@ -293,23 +293,39 @@ void iec_appendIO(int val, int inout)
   if (!(io = chain->cur))
     return;
 
-  val = val & 0xff;
-  data = last = io->data;
-  pos = io->header.len;
-  while (data->next) {
-    last = data;
-    data = data->next;
-    pos -= IEC_BUFSIZE;
+  while (buflen) {
+    last = data = io->data;
+    pos = io->header.pos - sizeof(io->header);
+    while (data && pos >= IEC_BUFSIZE) {
+      last = data;
+      data = data->next;
+      pos -= IEC_BUFSIZE;
+    }
+
+    count = buflen;
+    if (count > IEC_BUFSIZE - pos)
+      count = IEC_BUFSIZE - pos;
+    if (!data) {
+      data = last->next = kmalloc(sizeof(iec_linkedData), GFP_KERNEL);
+      data->next = NULL;
+    }
+
+    memcpy(&data->data[pos], buf, count);
+    io->header.pos += count;
+    buflen -= count;
+    buf += count;
   }
 
-  if (pos == IEC_BUFSIZE) {
-    data = last->next = kmalloc(sizeof(iec_linkedData), GFP_KERNEL);
-    data->next = NULL;
-    pos = 0;
-  }
-  data->data[pos] = val;
-  io->header.len++;
+  return;
+}
 
+void iec_appendByte(int val, int inout)
+{
+  char buf[1];
+
+
+  buf[1] = val & 0xff;
+  iec_appendData(buf, 1, inout);
   return;
 }
 
@@ -1096,6 +1112,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   iec_io *io;
   unsigned long remaining;
   unsigned char *wbuf;
+  char *sbuf[IEC_BUFSIZE];
   int minor = iminor(filp->f_path.dentry->d_inode);
 
 
@@ -1108,37 +1125,18 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
     wbuf += io->pos;
     if (count > sizeof(io->header) - io->pos)
       count = sizeof(io->header) - io->pos;
+
+    remaining = copy_from_user(wbuf, buf, count);
+    count -= remaining;
+    io->pos += count;
   }
   else {
-    iec_linkedData *data, *last;
-    int pos, len;
-
-
-    last = data = io->data;
-    pos = io->pos - sizeof(io->header);
-    len = io->header.len;
-    while (data && pos > IEC_BUFSIZE) {
-      last = data;
-      data = data->next;
-      pos -= IEC_BUFSIZE;
-      len -= IEC_BUFSIZE;
-    }
-
-    if (count > len - pos)
-      count = len - pos;
-    if (count > IEC_BUFSIZE - pos)
-      count = IEC_BUFSIZE - pos;
-    if (!data) {
-      data = last->next = kmalloc(sizeof(iec_linkedData), GFP_KERNEL);
-      data->next = NULL;
-    }
-    
-    wbuf = &data->data[pos];
+    count = sizeof(sbuf);
+    remaining = copy_from_user(sbuf, buf, count);
+    count -= remaining;
+    io->pos += count;
+    iec_appendData(sbf, count, OUTPUT);
   }
-
-  remaining = copy_from_user(wbuf, buf, count);
-  count -= remaining;
-  io->pos += count;
 
   if (io->pos == io->header.len + sizeof(io->header))
     iec_closeIO(OUTPUT);
