@@ -1170,11 +1170,12 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   unsigned char *wbuf;
   char sbuf[256];
   int minor = iminor(filp->f_path.dentry->d_inode);
-  size_t len, total;
+  size_t len, total, offset;
 
 
   //printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
   total = count;
+  offset = 0;
   while (total > 0) {
     len = count;
     
@@ -1191,7 +1192,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
       if (len > sizeof(io->header) - io->pos)
 	len = sizeof(io->header) - io->pos;
 
-      remaining = copy_from_user(wbuf, buf, len);
+      remaining = copy_from_user(wbuf, buf+offset, len);
       len -= remaining;
       io->pos += len;
     }
@@ -1200,7 +1201,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
 	len = sizeof(sbuf);
       if (len > (io->header.len + sizeof(io->header)) - io->pos)
 	len = (io->header.len + sizeof(io->header)) - io->pos;
-      remaining = copy_from_user(sbuf, buf, len);
+      remaining = copy_from_user(sbuf, buf + offset, len);
       len -= remaining;
       iec_appendData(sbuf, len, OUTPUT);
       //printk(KERN_NOTICE "IEC: added %i bytes to output buffer for %i\n", len, minor);
@@ -1214,6 +1215,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
     }
 
     total -= len;
+    offset += len;
   }
   
   *f_pos += count;
