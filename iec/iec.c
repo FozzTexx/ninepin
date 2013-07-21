@@ -190,7 +190,6 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
     digitalWrite(IEC_CLKOUT, HIGH);
     digitalWrite(IEC_DATAOUT, LOW);
 #endif
-    //udelay(c64slowdown);
   }
   else
     iec_atnState = IECWaitState;
@@ -267,10 +266,9 @@ void iec_channelIO(int val, int inout)
   if (!chain->cur)
     return;
 
+  chain->cur->header.channel = val & 0xff;
   if (cmd == IECCloseCommand && dev == 0x00) /* Close */
     chain->cur = NULL;
-  else
-    chain->cur->header.channel = val & 0xff;
 
   return;
 }
@@ -284,6 +282,7 @@ static inline void iec_appendData(const char *buf, int buflen, int inout)
   int pos, count;
   
 
+  /* FIXME - lock device while sending data so we can send incomplete buffers */
   if (!(device = iec_openDevices[iec_curDevice]))
     return;
   if (inout == INPUT)
@@ -364,6 +363,7 @@ int iec_unlinkIO(iec_device *device, iec_io *io, int inout)
   iec_linkedData *data, *next;
 
 
+  //printk(KERN_NOTICE "IEC: unlinking IO\n");
   if (down_interruptible(&device->lock))
     return 0;
     
@@ -391,6 +391,7 @@ int iec_unlinkIO(iec_device *device, iec_io *io, int inout)
   kfree(io);
   
   up(&device->lock);
+  //printk(KERN_NOTICE "IEC: did unlink\n");
   return 1;
 }
     
@@ -421,6 +422,7 @@ void iec_closeIO(int inout)
   }
   else {
     io->pos = sizeof(io->header);
+    //printk(KERN_NOTICE "IEC: queueing write %i\n", io->pos);
     queue_work(iec_writeQ, &iec_writeWork);
   }
 
@@ -722,6 +724,7 @@ int iec_setupTalker(void)
   int abort = 0;
 
 
+  //printk(KERN_NOTICE "IEC: switching to talk\n");
   abort = iec_waitForSignal(IEC_ATN, 1, 1000000);  
   if (!abort && (abort = iec_waitForSignal(IEC_CLK, 1, 100000)))
     printk(KERN_NOTICE "IEC: Timeout waiting for start of talk\n");
@@ -738,6 +741,8 @@ int iec_setupTalker(void)
     iec_state = IECOutputState;
   }
 
+  //printk(KERN_NOTICE "IEC: talking %i\n", abort);
+  
   return abort;
 }
 
@@ -752,26 +757,36 @@ static void iec_sendData(struct work_struct *work)
   int pos, len;
 
 
+  /* FIXME - lock device while sending data so we can send incomplete buffers */
   abort = 0;
   if (iec_state == IECChannelState)
     abort = iec_setupTalker();
 
   while (iec_state == IECOutputState && !abort) {
-    if (!(device = iec_openDevices[iec_curDevice]))
+    //printk(KERN_NOTICE "IEC: talk state %i %i\n", iec_state, iec_curDevice);
+    if (!(device = iec_openDevices[iec_curDevice])) {
+      printk(KERN_NOTICE "IEC: device %i not open\n", iec_curDevice);
       return;
-    if (!device->out.head)
+    }
+    if (!device->out.head) {
+      printk(KERN_NOTICE "IEC: device %i has no data\n", iec_curDevice);
       return;
+    }
 
     io = device->out.head;
     while (io && io != device->out.cur && io->header.channel != iec_curChannel)
       io = io->next;
   
-    if (!io)
+    if (!io) {
+      printk(KERN_NOTICE "IEC: device %i has no data for channel %i\n",
+	     iec_curDevice, iec_curChannel);
       return;
+    }
 
     /* If length is 0 release bus to indicate file not found. No way
        to have a 0 length file? */
     if (!io->header.len) {
+      printk(KERN_NOTICE "IEC: file not found\n");
       iec_state = IECWaitState;
       iec_releaseBus();
       iec_unlinkIO(device, io, OUTPUT);
@@ -779,28 +794,40 @@ static void iec_sendData(struct work_struct *work)
     }
     
     data = io->data;
+    //printk(KERN_NOTICE "IEC: starting data %i len %i\n", io->pos, io->header.len);
     pos = io->pos - sizeof(io->header);
     len = io->header.len;
-    while (pos > IEC_BUFSIZE) {
+    while (pos >= IEC_BUFSIZE) {
+      //printk(KERN_NOTICE "IEC: next buffer\n");
       data = data->next;
       pos -= IEC_BUFSIZE;
       len -= IEC_BUFSIZE;
     }
 
+    if (len > IEC_BUFSIZE)
+      len = IEC_BUFSIZE;
     len -= pos;
-    while (len > IEC_BUFSIZE)
-      len -= IEC_BUFSIZE;
     wbuf = &data->data[pos];
 
+    //printk(KERN_NOTICE "IEC: data of length %i from %i\n", len, pos);
+    if (len < 0) {
+      abort = 1;
+      break;
+    }
+    
     for (pos = 0; !abort && iec_state == IECOutputState && pos < len; pos++) {
       //printk(KERN_NOTICE "IEC: sending %i of %i\n", pos, len);
       val = wbuf[pos];
-      if (pos == len - 1 && !data->next)
+      if (pos == len - 1 && !data->next) {
+	//printk(KERN_NOTICE "IEC: last byte\n");
 	val |= DATA_EOI;
+      }
       abort = iec_writeByte(val);
     }
-    
-    if (pos == len && !data->next && !iec_unlinkIO(device, io, OUTPUT)) {
+    io->pos += len;
+
+    //printk(KERN_NOTICE "IEC: sent entire file %i %i %i\n", pos, len, (int) data->next);
+    if (io->pos - sizeof(io->header) == io->header.len && !iec_unlinkIO(device, io, OUTPUT)) {
       printk(KERN_NOTICE "IEC: unable to lock IO\n");
       return;
     }
@@ -1142,32 +1169,53 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   unsigned char *wbuf;
   char sbuf[256];
   int minor = iminor(filp->f_path.dentry->d_inode);
+  size_t len, total, offset;
 
 
-  if (!device->out.cur)
-    iec_newIO(minor, OUTPUT);
-  io = device->out.cur;
+  //printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
+  total = count;
+  offset = 0;
+  while (total > 0) {
+    len = count;
+    
+    if (!device->out.cur) {
+      //printk(KERN_NOTICE "IEC: starting output buffer for %i\n", minor);
+      iec_newIO(minor, OUTPUT);
+    }
 
-  if (io->pos < sizeof(io->header)) {
-    wbuf = (unsigned char *) &io->header;
-    wbuf += io->pos;
-    if (count > sizeof(io->header) - io->pos)
-      count = sizeof(io->header) - io->pos;
+    io = device->out.cur;
 
-    remaining = copy_from_user(wbuf, buf, count);
-    count -= remaining;
-    io->pos += count;
+    if (io->pos < sizeof(io->header)) {
+      wbuf = (unsigned char *) &io->header;
+      wbuf += io->pos;
+      if (len > sizeof(io->header) - io->pos)
+	len = sizeof(io->header) - io->pos;
+
+      remaining = copy_from_user(wbuf, buf+offset, len);
+      len -= remaining;
+      io->pos += len;
+    }
+    else {
+      if (len > sizeof(sbuf))
+	len = sizeof(sbuf);
+      if (len > (io->header.len + sizeof(io->header)) - io->pos)
+	len = (io->header.len + sizeof(io->header)) - io->pos;
+      remaining = copy_from_user(sbuf, buf + offset, len);
+      len -= remaining;
+      iec_appendData(sbuf, len, OUTPUT);
+      //printk(KERN_NOTICE "IEC: added %i bytes to output buffer for %i\n", len, minor);
+    }
+
+    /* FIXME - lock device while sending data so we can send incomplete buffers */
+    //printk(KERN_NOTICE "IEC: pos %i len %i\n", io->pos, io->header.len);
+    if (io->pos == io->header.len + sizeof(io->header)) {
+      //printk(KERN_NOTICE "IEC: read all data for %i len %i\n", minor, io->header.len);
+      iec_closeIO(OUTPUT);
+    }
+
+    total -= len;
+    offset += len;
   }
-  else {
-    count = sizeof(sbuf);
-    remaining = copy_from_user(sbuf, buf, count);
-    count -= remaining;
-    io->pos += count;
-    iec_appendData(sbuf, count, OUTPUT);
-  }
-
-  if (io->pos == io->header.len + sizeof(io->header))
-    iec_closeIO(OUTPUT);
   
   *f_pos += count;
   return count;
