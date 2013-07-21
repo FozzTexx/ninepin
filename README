@@ -27,7 +27,7 @@ kernel module.
 The disk interface support works with the Commodore 64 IEC serial
 bus. It is a combination of a user space program and kernel module
 which implements the protocol on the Raspberry Pi using GPIO. The
-signalling is implemented in a Linux Kernel Module in order to use
+signaling is implemented in a Linux Kernel Module in order to use
 interrupts. There are only 2 places where interrupts are disabled
 during processing. I had to use looping for delays since there was no
 way to do microsecond delays in the kernel.
