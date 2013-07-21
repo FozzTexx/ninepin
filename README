@@ -4,13 +4,33 @@ Copyright 2013 by Chris Osborn <fozztexx@fozztexx.com>
 See COPYING file for detailed information on terms of copying.
 
 ----------------------------------------
-Ninepin is a combination of a user space program and kernel module
-which implements the IEC serial protocol on the Raspberry Pi using
-GPIO, as used on the Commodore 64. The signalling is implemented in a
-Linux Kernel Module in order to use interrupts. There are only 2
-places where interrupts are disabled during processing. I had to use
-looping for delays since there was no way to do microsecond delays in
-the kernel.
+
+Ninepin is about interfacing retro computers to modern peripherals. It
+currently offers two features: converting a USB joystick so it can be
+used as an Atari style 9-pin joystick (hence the name), and the
+ability to emulate a disk drive.
+
+The joystick interface will work with most any USB HID compliant
+joystick and uses the GPIO to open/close switches to act as a simple
+Atari 2600 joystick, which works on a variety of platforms, such as
+the Commodore 64, Atari 2600, and Sega Master System. It currently
+only maps the directional and a single button for player 1. Additional
+chips are required to be connected to the GPIO. I'm using a couple of
+CD4016 switches and a 74HC595 shift register.
+
+In order to use the joystick interface, the program needs to be run as
+root. If the program is not run as root the joystick routines will be
+disable, although the disk functionality will still work. Eventually I
+plan to move the GPIO for handling the ninepin switching into another
+kernel module.
+
+The disk interface support works with the Commodore 64 IEC serial
+bus. It is a combination of a user space program and kernel module
+which implements the protocol on the Raspberry Pi using GPIO. The
+signalling is implemented in a Linux Kernel Module in order to use
+interrupts. There are only 2 places where interrupts are disabled
+during processing. I had to use looping for delays since there was no
+way to do microsecond delays in the kernel.
 
 The driver supports both a 3 wire and a 5 wire interface, depending on
 what kind of level shifters you have available (and how brave you
@@ -31,13 +51,30 @@ In 5 pin mode, 3 pins are used to read the signals, and 2 others are
 used to send output. This allows the use of unidirectional level
 shifters such as a 74HCT245 and CD4050.
 
-ninepin also has some routines for converting a USB gamepad into a
-ninepin joystick interface (hence the name) like used on the Atari
-2600 and Commodore 64. It currently only maps the directional and a
-single button for player 1. Additional chips are required to be
-connected to the GPIO. I'm using a couple of CD4016 switches and a
-74HC595 shift register.
+Currently the disk drive only handles simple IO of reading and writing
+.PRG files. There's no way to get a directory listing, no way to load
+or save other file types, and no support for dealing with disk images
+like .d64. There is also no emulation of a real 1541 so fastloaders
+will not work.
 
-In order to use the joystick interface, the program needs to be run as
-root. At the moment you can either use ninepin in joystick mode or IEC
-mode, but not both at the same time. Yet.
+----------------------------------------
+
+Future plans include adding more CBM DOS capabilities and probably
+extending it so that it's possible to change directories and select
+disk images from on the Commodore. There are some other 1541
+emulations out there that can do that so the syntax of file commands
+should probably be copied.
+
+I also want to add supporting two joysticks and the ability to use the
+extra buttons on a USB gamepad for changing settings. Support for
+analog controls is also planned, but I want to support several
+different platforms which used varying pot sizes (1Meg on the 2600,
+500k on the C64, and 150k on the Apple II) and I'm not sure what to
+use for D2A. A 16bit R2R resistor ladder would work, but I don't
+really want to make 4 of them by hand!
+
+Another joystick feature that is missing is the ability to swap
+joystick 1 & 2 with a button on the USB gamepad. This seems like it
+would be very useful on the C64 since some software uses port 1 and
+some uses port 2. Being able to switch without unplugging cables would
+be quite useful!
