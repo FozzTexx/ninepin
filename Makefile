@@ -1,5 +1,5 @@
 PRODUCT= ninepin
-CFILES= $(PRODUCT).c
+CFILES= $(PRODUCT).c cbmdos.c joystick.c
 OTHER_CFLAGS=
 CFLAGS= -g -Wall -I$(HOME)/Unix/$(OSTYPE)/include -dD
 OTHER_LIBS=-lwiringPi -lrt
