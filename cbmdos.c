@@ -27,7 +27,7 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
-void dosMakeC64Name(const char *original, char *c64)
+void dosFilenameToC64(const char *original, char *c64)
 {
   static char *buf = NULL;
   static int buflen = 0;
@@ -38,7 +38,7 @@ void dosMakeC64Name(const char *original, char *c64)
 
   len = strlen(original);
   if (len+1 > buflen) {
-    buflen = ((len + 32) / 32) * 32;
+    buflen = ((len + 35) / 32) * 32;
     buf = realloc(buf, len);
   }
   strcpy(buf, original);
@@ -78,22 +78,99 @@ void dosMakeC64Name(const char *original, char *c64)
   return;
 }
 
-char *dosFindFile(const char *path, int ignoreCase)
+int dosWildcardMatch(const char *pattern, const char *str)
 {
-  /* FIXME - remap characters */
-  /* FIXME - search directory if ignoreCase is YES */
-  /* FIXME - map 16 char names to full names */
-  /* FIXME - deal with wildcards */
-  return NULL;
+  const char *s, *p;
+  int star = 0;
+
+  
+ loopStart:
+  for (s = str, p = pattern; *s; ++s, ++p) {
+    switch (*p) {
+    case '?':
+      if (*s == '.')
+	goto starCheck;
+      break;
+    case '*':
+      star = 1;
+      str = s, pattern = p;
+      if (!*++pattern)
+	return 1;
+      goto loopStart;
+    default:
+      if (tolower(*s) != tolower(*p))
+	goto starCheck;
+      break;
+    }
+  }
+  if (*p == '*')
+    ++p;
+  return (!*p);
+
+ starCheck:
+  if (!star)
+    return 0;
+  str++;
+  goto loopStart;
 }
 
-FILE *dosOpenFile(const char *path, int channel, int ignoreCase, char *mode, char **bufPtr)
+FILE *dosFindFile(const char *path, const char *mode)
 {
-  char *fixedPath;
+  DIR *dir;
+  struct dirent *dp;
+  FILE *file = NULL;
 
+
+  if (!(dir = opendir(".")))
+    return NULL;
+
+  for (dp = readdir(dir); dp; dp = readdir(dir))
+    if (dosWildcardMatch(path, dp->d_name)) {
+      file = fopen(dp->d_name, mode);
+      break;
+    }
+
+  closedir(dir);
+  return file;
+}
+  
+FILE *dosOpenFile(const char *path, int channel, const char *mode, char **bufPtr)
+{
+  int special = 0;
+  int driveNum = 0;
+  const char *fn, *cn;
+  char *filespec;
+  
+  
+  /* Prefix: $#/
+     Drive number: decimal
+     Colon
+     Path with wildcards */
+
+  filespec = alloca(strlen(path) + 5);
+  strcpy(filespec, path);
+  if ((channel == 0 && !strcmp(mode, "r")) || (channel == 1 && !strcmp(mode, "w")))
+    strcat(filespec, ".PRG");
+  fn = filespec;
+  if (*fn == '$' || *fn == '#' || *fn == '/') {
+    special = *fn;
+    fn++;
+  }
+
+  cn = strchr(fn, ':');
+  if ((special || cn) && *fn >= '0' && *fn <= '9') {
+    driveNum = atoi(fn);
+    while (isdigit(*fn))
+      fn++;
+    if (*fn == ':')
+      fn++;
+  }
+
+  /* FIXME - remap PETSCII characters */
+  /* FIXME - map 16 char names to full names */
 
   *bufPtr = NULL;
-  if (!strcmp(path, "$") || !strcmp(path, "$0")) {
+  if (special == '$') {
     DIR *dir;
     struct dirent *dp;
     size_t len;
@@ -106,7 +183,8 @@ FILE *dosOpenFile(const char *path, int channel, int ignoreCase, char *mode, cha
     char *exten;
 
 
-    /* FIXME - setup buffer */
+    /* FIXME - check driveNum */
+    
     if (!(dir = opendir(".")))
       return NULL;
 
@@ -133,7 +211,7 @@ FILE *dosOpenFile(const char *path, int channel, int ignoreCase, char *mode, cha
 	  blocks = 65535;
 	for (bw = 1, nw = 9; blocks > nw; bw++, nw = nw * 10 + 9)
 	  ;
-	dosMakeC64Name(dp->d_name, filename);
+	dosFilenameToC64(dp->d_name, filename);
 	exten = strrchr(filename, '.');
 	nw = exten - filename;
 	*exten = 0;
@@ -149,8 +227,14 @@ FILE *dosOpenFile(const char *path, int channel, int ignoreCase, char *mode, cha
     rewind(file);
     return file;
   }
-  else if ((fixedPath = dosFindFile(path, ignoreCase)))
-    return fopen(fixedPath, mode);
+  else if (special == '#') {
+    /* FIXME - load a d64 image into driveNum */
+  }
+  else if (special == '/') {
+    /* FIXME - change directory */
+  }
+  else
+    return dosFindFile(fn, mode);
   
   return NULL;
 }
@@ -240,7 +324,7 @@ extern void dosHandleIO(int fd)
       header.channel = chan;
       header.len = 0;
 	  
-      if ((file = dosOpenFile(filename, chan, 1, "r", &mem))) {
+      if ((file = dosOpenFile(filename, chan, "r", &mem))) {
 	fprintf(stderr, "Sending %s\n", filename);
 	gettimeofday(&start, NULL);
 	
