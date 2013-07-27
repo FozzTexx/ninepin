@@ -259,7 +259,7 @@ void iec_channelIO(int val, int inout)
   
   if (!(device = iec_openDevices[iec_curDevice]))
     return;
-  printk(KERN_NOTICE "IEC: changing channel to %i\n", chan);
+  //printk(KERN_NOTICE "IEC: changing channel to %i\n", chan);
   iec_curChannel = chan;
   if (inout == INPUT)
     chain = &device->in;
@@ -513,9 +513,13 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   int abort;
 
 
-  printk(KERN_NOTICE "IEC: clock %i %i\n", iec_atnState, iec_state);
+  atn = !digitalRead(IEC_ATN);
+  if (!atn)
+    iec_atnState = IECWaitState;
+  
+  printk(KERN_NOTICE "IEC: clock %i/%i %i\n", iec_atnState, atn, iec_state);
   if (iec_atnState != IECAttentionState &&
-      (iec_state == IECWaitState || iec_state == IECOutputState))
+      (iec_state == IECWaitState || iec_state == IECOutputState || iec_state == IECTalkState))
     return IRQ_HANDLED;
 
   if (iec_state == IECChannelState) {
@@ -524,7 +528,6 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
     return IRQ_HANDLED;
   }
   
-  atn = !digitalRead(IEC_ATN);
   if (atn && iec_atnState == IECAttentionIgnoreState)
     return IRQ_HANDLED;
 
@@ -586,7 +589,7 @@ static void iec_processData(struct work_struct *work)
     val = iec_buffer[iec_outpos];
     atn = val & DATA_ATN;
     iec_outpos = (iec_outpos + 1) % IEC_BUFSIZE;
-    printk(KERN_NOTICE "IEC: processing data %02x\n", val);
+    //printk(KERN_NOTICE "IEC: processing data %02x\n", val);
 
     if (atn) {
       cmd = val & 0xe0;
@@ -650,9 +653,12 @@ int iec_writeByte(int bits)
   unsigned long flags;
 
 
+  if (iec_state != IECOutputState)
+    return 1;
+  
   disable_irq(irq_clk);
   local_irq_save(flags);
-  printk(KERN_NOTICE "IEC: Write: %03x data: %i\n", bits, digitalRead(IEC_DATA));
+  //printk(KERN_NOTICE "IEC: Write: %03x data: %i\n", bits, digitalRead(IEC_DATA));
 #if NUMPINS == 3
   pinMode(IEC_CLK, INPUT);
 #else
@@ -679,7 +685,7 @@ int iec_writeByte(int bits)
   udelay(c64slowdown);
   
   for (len = 0; !abort && len < 8; len++, bits >>= 1) {
-    if (iec_state != IECOutputState) {
+    if (!digitalRead(IEC_ATN) || iec_state != IECOutputState) {
       abort = 1;
       break;
     }
@@ -736,7 +742,6 @@ int iec_setupTalker(void)
     digitalWrite(IEC_DATAOUT, HIGH);
     digitalWrite(IEC_CLKOUT, LOW);
 #endif
-    udelay(c64slowdown);
     iec_state = IECOutputState;
   }
 
@@ -784,7 +789,7 @@ static void iec_sendData(struct work_struct *work)
     /* If length is 0 release bus to indicate file not found. No way
        to have a 0 length file? */
     if (!io->header.len) {
-      printk(KERN_NOTICE "IEC: file not found\n");
+      //printk(KERN_NOTICE "IEC: file not found\n");
       iec_state = IECWaitState;
       iec_releaseBus();
       iec_unlinkIO(device, io, OUTPUT);
@@ -811,13 +816,19 @@ static void iec_sendData(struct work_struct *work)
     }
     
     for (pos = 0; !abort && iec_state == IECOutputState && pos < len; pos++) {
-      printk(KERN_NOTICE "IEC: sending %i of %i\n", pos, len);
       val = wbuf[pos];
-      if (pos == len - 1 && !data->next && io->header.channel != 15)
+      printk(KERN_NOTICE "IEC: sending %i of %i: %i\n",
+	     io->pos + pos - sizeof(io->header), io->header.len, val);
+      if (pos == len - 1 && !data->next)// && io->header.channel != 15)
 	val |= DATA_EOI;
       abort = iec_writeByte(val);
+      if (abort && iec_state == IECWaitState) {
+	printk(KERN_NOTICE "IEC: send paused\n");
+	abort = 0;
+	break;
+      }
     }
-    io->pos += len;
+    io->pos += pos;
 
     if (io->pos - sizeof(io->header) == io->header.len && !iec_unlinkIO(device, io, OUTPUT)) {
       printk(KERN_NOTICE "IEC: unable to lock IO\n");
@@ -826,6 +837,7 @@ static void iec_sendData(struct work_struct *work)
   }
   
   if (abort) {
+    printk(KERN_NOTICE "IEC: abort send\n");
     iec_state = IECWaitState;
     iec_releaseBus();
   }
@@ -1164,7 +1176,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   size_t len, total, offset;
 
 
-  printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
+  //printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
   total = count;
   offset = 0;
   while (total > 0) {
@@ -1186,7 +1198,8 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
       io->pos += len;
     }
     else {
-      printk(KERN_NOTICE "IEC: appending bytes to channel %i\n", io->header.channel);
+      /* FIXME - find a way to block if writing to channel we are currently sending */
+      //printk(KERN_NOTICE "IEC: appending bytes to channel %i\n", io->header.channel);
       if (len > sizeof(sbuf))
 	len = sizeof(sbuf);
       if (len > (io->header.len + sizeof(io->header)) - io->pos)
