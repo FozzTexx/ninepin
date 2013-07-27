@@ -27,6 +27,91 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
+typedef enum {
+  CBMOkError = 0,
+  CBMFilesScratchedError = 1,
+  CBMReadHeaderError = 20,
+  CBMReadSyncError = 21,
+  CBMReadChecksumError = 22,
+  CBMReadBlockError = 23,
+  CBMReadOtherError = 24,
+  CBMWriteError = 25,
+  CBMWriteProtectError = 26,
+  CBMRead27Error = 27,
+  CBMWriteSyncError = 28,
+  CBMDiskIDMismatchError = 29,
+  CBMSyntaxError = 30,
+  CBMIllegalCommandError = 31,
+  CBMCommandOverrunError = 32,
+  CBMWildcardError = 33,
+  CBMMissingFilenameError = 34,
+  CBMUSRFileNotFoundError = 39,
+  CBMRecordNotPresentError = 50,
+  CBMRecordOverflowError = 51,
+  CBMFileTooLargeError = 52,
+  CBMWriteFileOpenError = 60,
+  CBMFileNotOpenError = 61,
+  CBMFileNotFoundError = 62,
+  CBMFileExistsError = 63,
+  CBMFileTypeMismatchError = 64,
+  CBMNoBlockError = 65,
+  CBMIllegalBlockError = 66,
+  CBMIllegalTrackSector = 67,
+  CBMNoChannelError = 70,
+  CBMDirectoryError = 71,
+  CBMDiskFullError = 72,
+  CBMVersionError = 73,
+  CBMDriveNotReadyError = 74,
+  CBMSpeedError = 75,
+} CBMDOSError;
+
+typedef struct {
+  CBMDOSError err;
+  char *str;
+} CBMDOSErrorString;
+
+static CBMDOSErrorString dosErrorStrings[] = {
+  {CBMOkError, " OK"},
+  {CBMFilesScratchedError, "FILES SCRATCHED"},
+  {CBMReadHeaderError, "READ ERROR"},
+  {CBMReadSyncError, "READ ERROR"},
+  {CBMReadChecksumError, "READ ERROR"},
+  {CBMReadBlockError, "READ ERROR"},
+  {CBMReadOtherError, "READ ERROR"},
+  {CBMWriteError, "WRITE ERROR"},
+  {CBMWriteProtectError, "WRITE PROTECT ON"},
+  {CBMRead27Error, "READ ERROR"},
+  {CBMWriteSyncError, "WRITE ERROR"},
+  {CBMDiskIDMismatchError, "DISK ID MISMATCH"},
+  {CBMSyntaxError, "SYNTAX ERROR"},
+  {CBMIllegalCommandError, "SYNTAX ERROR"},
+  {CBMCommandOverrunError, "SYNTAX ERROR"},
+  {CBMWildcardError, "SYNTAX ERROR"},
+  {CBMMissingFilenameError, "SYNTAX ERROR"},
+  {CBMUSRFileNotFoundError, "FILE NOT FOUND"},
+  {CBMRecordNotPresentError, "RECORD NOT PRESENT"},
+  {CBMRecordOverflowError, "OVERFLOW IN RECORD"},
+  {CBMFileTooLargeError, "FILE TOO LARGE"},
+  {CBMWriteFileOpenError, "WRITE FILE OPEN"},
+  {CBMFileNotOpenError, "FILE NOT OPEN"},
+  {CBMFileNotFoundError, "FILE NOT FOUND"},
+  {CBMFileExistsError, "FILE EXISTS"},
+  {CBMFileTypeMismatchError, "FILE TYPE MISMATCH"},
+  {CBMNoBlockError, "NO BLOCK"},
+  {CBMIllegalBlockError, "ILLEGAL TRACK OR SECTOR"},
+  {CBMIllegalTrackSector, "ILLEGAL TRACK OR SECTOR"},
+  {CBMNoChannelError, "NO CHANNEL"},
+  {CBMDirectoryError, "DIR ERROR"},
+  {CBMDiskFullError, "DISK FULL"},
+  {CBMVersionError, "CBM DOS V.26 1541"},
+  {CBMDriveNotReadyError, "DRIVE NOT READY"},
+  {CBMSpeedError, "FORMAT SPEED ERROR"},
+  {0, NULL},
+};
+
+/* FIXME - don't use global variables */
+static int dosError = 0, dosTrackError = 0, dosSectorError = 0;
+
 void dosFilenameToC64(const char *original, char *c64)
 {
   static char *buf = NULL;
@@ -133,6 +218,22 @@ FILE *dosFindFile(const char *path, const char *mode)
   closedir(dir);
   return file;
 }
+
+FILE *dosSendError(char **bufPtr)
+{
+  FILE *file;
+  int i;
+  size_t len;
+
+
+  file = open_memstream(bufPtr, &len);
+  for (i = 0; dosErrorStrings[i].str && dosErrorStrings[i].err != dosError; i++)
+    ;
+  fprintf(file, "%02i,%s,%02i,%02i\r", dosError, dosErrorStrings[i].str,
+	  dosTrackError, dosSectorError);
+  rewind(file);
+  return file;
+}
   
 FILE *dosOpenFile(const char *path, int channel, const char *mode, char **bufPtr)
 {
@@ -145,8 +246,13 @@ FILE *dosOpenFile(const char *path, int channel, const char *mode, char **bufPtr
   /* Prefix: $#/
      Drive number: decimal
      Colon
-     Path with wildcards */
+     Path with wildcards
+     comma followed by type
+     comma followed by mode*/
 
+  if (channel == 15 && !strcmp(mode, "r"))
+    return dosSendError(bufPtr);
+  
   filespec = alloca(strlen(path) + 5);
   strcpy(filespec, path);
   if ((channel == 0 && !strcmp(mode, "r")) || (channel == 1 && !strcmp(mode, "w")))
@@ -278,8 +384,9 @@ extern void dosHandleIO(int fd)
       fprintf(stderr, "Opening %s\n", data);
       /* FIXME - make sure filename fits */
       strcpy(filename, (char *) data);
-      /* Will wait until next command to see if it is a read or
-	 write and check if the file exists */
+      /* FIXME - check command here to set error code. How do I know
+	 if it's a read or write though? Oh right, I check the channel
+	 or the comma stuff.*/
       break;
 
     case IECCloseCommand:
