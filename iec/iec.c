@@ -179,7 +179,7 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
 
   
   atn = !digitalRead(IEC_ATN);
-  //printk(KERN_NOTICE "IEC: attention %i\n", atn);
+  printk(KERN_NOTICE "IEC: attention %i\n", atn);
   if (atn) {
     iec_atnState = IECAttentionState;
     iec_state = IECWaitState;
@@ -249,16 +249,18 @@ void iec_newIO(int val, int inout)
 
 void iec_channelIO(int val, int inout)
 {
-  int cmd, dev;
+  int cmd, chan;
   iec_device *device;
   iec_chain *chain;
 
 
   cmd = val & 0xf0;
-  dev = val & 0x0f;
+  chan = val & 0x0f;
   
   if (!(device = iec_openDevices[iec_curDevice]))
     return;
+  printk(KERN_NOTICE "IEC: changing channel to %i\n", chan);
+  iec_curChannel = chan;
   if (inout == INPUT)
     chain = &device->in;
   else
@@ -511,7 +513,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   int abort;
 
 
-  //printk(KERN_NOTICE "IEC: clock %i %i\n", iec_atnState, iec_state);
+  printk(KERN_NOTICE "IEC: clock %i %i\n", iec_atnState, iec_state);
   if (iec_atnState != IECAttentionState &&
       (iec_state == IECWaitState || iec_state == IECOutputState))
     return IRQ_HANDLED;
@@ -529,7 +531,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   abort = 0;
 
   val = iec_readByte();
-  //printk(KERN_NOTICE "IEC: Read: %03x %i %i\n", val, atn, iec_atnState);
+  printk(KERN_NOTICE "IEC: Read: %03x %i %i\n", val, atn, iec_atnState);
   if (val >= 0) {
     if (atn) { 
       val |= DATA_ATN;
@@ -584,7 +586,7 @@ static void iec_processData(struct work_struct *work)
     val = iec_buffer[iec_outpos];
     atn = val & DATA_ATN;
     iec_outpos = (iec_outpos + 1) % IEC_BUFSIZE;
-    //printk(KERN_NOTICE "IEC: processing data %02x\n", val);
+    printk(KERN_NOTICE "IEC: processing data %02x\n", val);
 
     if (atn) {
       cmd = val & 0xe0;
@@ -624,7 +626,6 @@ static void iec_processData(struct work_struct *work)
 	iec_channelIO(val, INPUT);
 	if (dev == 0x00)
 	  iec_closeIO(INPUT);
-	iec_curChannel = dev & 0x0f;
 	break;
 
       default:
@@ -651,7 +652,7 @@ int iec_writeByte(int bits)
 
   disable_irq(irq_clk);
   local_irq_save(flags);
-  //printk(KERN_NOTICE "IEC: Write: %03x data: %i\n", bits, digitalRead(IEC_DATA));
+  printk(KERN_NOTICE "IEC: Write: %03x data: %i\n", bits, digitalRead(IEC_DATA));
 #if NUMPINS == 3
   pinMode(IEC_CLK, INPUT);
 #else
@@ -754,6 +755,8 @@ static void iec_sendData(struct work_struct *work)
 
 
   /* FIXME - lock device while sending data so we can send incomplete buffers */
+  printk(KERN_NOTICE "IEC: looking for work for %i %i\n", iec_curDevice, iec_curChannel);
+  
   abort = 0;
   if (iec_state == IECChannelState)
     abort = iec_setupTalker();
@@ -808,9 +811,9 @@ static void iec_sendData(struct work_struct *work)
     }
     
     for (pos = 0; !abort && iec_state == IECOutputState && pos < len; pos++) {
-      //printk(KERN_NOTICE "IEC: sending %i of %i\n", pos, len);
+      printk(KERN_NOTICE "IEC: sending %i of %i\n", pos, len);
       val = wbuf[pos];
-      if (pos == len - 1 && !data->next)
+      if (pos == len - 1 && !data->next && io->header.channel != 15)
 	val |= DATA_EOI;
       abort = iec_writeByte(val);
     }
@@ -1161,7 +1164,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   size_t len, total, offset;
 
 
-  //printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
+  printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
   total = count;
   offset = 0;
   while (total > 0) {
@@ -1183,6 +1186,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
       io->pos += len;
     }
     else {
+      printk(KERN_NOTICE "IEC: appending bytes to channel %i\n", io->header.channel);
       if (len > sizeof(sbuf))
 	len = sizeof(sbuf);
       if (len > (io->header.len + sizeof(io->header)) - io->pos)
