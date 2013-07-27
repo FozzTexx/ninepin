@@ -44,8 +44,8 @@ int main(int argc, char *argv[])
   dosfd = open("/dev/iec8", O_RDWR);
   if (dosfd < 0)
     fprintf(stderr, "Unable to open IEC device\n");
-  
-  for (;;) {
+
+  for (; dosfd >= 0 || joyfd >= 0;) {
     FD_ZERO(&rd);
     if (joyfd >= 0)
       FD_SET(joyfd, &rd);
