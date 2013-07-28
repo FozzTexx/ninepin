@@ -653,7 +653,7 @@ int iec_writeByte(int bits)
   unsigned long flags;
 
 
-  if (iec_state != IECOutputState)
+  if (!digitalRead(IEC_ATN) || iec_state != IECOutputState)
     return 1;
   
   disable_irq(irq_clk);
@@ -668,6 +668,13 @@ int iec_writeByte(int bits)
   if ((abort = iec_waitForSignal(IEC_DATA, 1, 100000)))
     printk(KERN_NOTICE "IEC: Timeout waiting to send\n");
 
+  /* Because interrupts are disabled it's possible to miss the ATN pause signal */
+  if (!digitalRead(IEC_ATN)) {
+    iec_state = IECWaitState;
+    iec_atnState = IECAttentionState;
+    abort = 1;
+  }
+  
   if (!abort && (bits & DATA_EOI)) {
     if ((abort = iec_waitForSignal(IEC_DATA, 0, 100000)))
       printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack\n");
@@ -742,6 +749,7 @@ int iec_setupTalker(void)
     digitalWrite(IEC_DATAOUT, HIGH);
     digitalWrite(IEC_CLKOUT, LOW);
 #endif
+    udelay(c64slowdown*2);
     iec_state = IECOutputState;
   }
 
@@ -822,7 +830,7 @@ static void iec_sendData(struct work_struct *work)
       if (pos == len - 1 && !data->next)// && io->header.channel != 15)
 	val |= DATA_EOI;
       abort = iec_writeByte(val);
-      if (abort && iec_state == IECWaitState) {
+      if (abort && (!digitalRead(IEC_ATN) || iec_state != IECOutputState)) {
 	printk(KERN_NOTICE "IEC: send paused\n");
 	abort = 0;
 	break;
