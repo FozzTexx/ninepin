@@ -141,14 +141,19 @@ struct file_operations iec_fops = {
  release: iec_close
 };
 
-static inline int iec_waitForSignal(int pin, int val, int delay)
+static inline int iec_waitForSignals(int pin, int val, int pin2, int val2, int delay)
 {
   struct timeval start, now;
   int elapsed, abort = 0;
 
 
   do_gettimeofday(&start);
-  while (digitalRead(pin) != val) {
+  for (;;) {
+    if (digitalRead(pin) == val)
+      break;
+    if (pin2 && digitalRead(pin2) == val2)
+      break;
+
     do_gettimeofday(&now);
     elapsed = (now.tv_sec - start.tv_sec) * 1000000 + (now.tv_usec - start.tv_usec);
     if (elapsed >= delay) {
@@ -476,7 +481,7 @@ static inline int iec_readByte(void)
   }
 
   for (len = 0, bits = eoi; !abort && len < 8; len++) {
-    if ((abort = iec_waitForSignal(IEC_CLK, 1, 150))) {
+    if ((abort = iec_waitForSignals(IEC_CLK, 1, 0, 0, 150))) {
       printk(KERN_NOTICE "IEC: timeout waiting for bit %i\n", len);
       break;
     }
@@ -484,7 +489,7 @@ static inline int iec_readByte(void)
     if (digitalRead(IEC_DATA))
       bits |= 1 << len;
 
-    if (iec_waitForSignal(IEC_CLK, 0, 150)) {
+    if (iec_waitForSignals(IEC_CLK, 0, 0, 0, 150)) {
       printk(KERN_NOTICE "IEC: Timeout after bit %i\n", len);
       if (len < 7)
 	abort = 1;
@@ -665,7 +670,7 @@ int iec_writeByte(int bits)
   digitalWrite(IEC_CLKOUT, HIGH);
 #endif
 
-  if ((abort = iec_waitForSignal(IEC_DATA, 1, 100000)))
+  if ((abort = iec_waitForSignals(IEC_DATA, 1, IEC_ATN, 0, 100000)))
     printk(KERN_NOTICE "IEC: Timeout waiting to send\n");
 
   /* Because interrupts are disabled it's possible to miss the ATN pause signal */
@@ -676,10 +681,10 @@ int iec_writeByte(int bits)
   }
   
   if (!abort && (bits & DATA_EOI)) {
-    if ((abort = iec_waitForSignal(IEC_DATA, 0, 100000)))
+    if ((abort = iec_waitForSignals(IEC_DATA, 0, IEC_ATN, 0, 100000)))
       printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack\n");
 
-    if (!abort && (abort = iec_waitForSignal(IEC_DATA, 1, 100000)))
+    if (!abort && (abort = iec_waitForSignals(IEC_DATA, 1, IEC_ATN, 0, 100000)))
       printk(KERN_NOTICE "IEC: Timeout waiting for EOI ack finish\n");
   }
 
@@ -721,7 +726,7 @@ int iec_writeByte(int bits)
   }
   enable_irq(irq_clk);
 
-  if (!abort && (abort = iec_waitForSignal(IEC_DATA, 0, 10000))) {
+  if (!abort && (abort = iec_waitForSignals(IEC_DATA, 0, IEC_ATN, 0, 10000))) {
     printk(KERN_NOTICE "IEC: Timeout waiting for listener ack\n");
     abort = 0;
   }
@@ -737,8 +742,8 @@ int iec_setupTalker(void)
 
 
   //printk(KERN_NOTICE "IEC: switching to talk\n");
-  abort = iec_waitForSignal(IEC_ATN, 1, 1000000);  
-  if (!abort && (abort = iec_waitForSignal(IEC_CLK, 1, 100000)))
+  abort = iec_waitForSignals(IEC_ATN, 1, 0, 0, 1000000);  
+  if (!abort && (abort = iec_waitForSignals(IEC_CLK, 1, IEC_ATN, 0, 100000)))
     printk(KERN_NOTICE "IEC: Timeout waiting for start of talk\n");
 
   if (!abort) {
@@ -749,7 +754,7 @@ int iec_setupTalker(void)
     digitalWrite(IEC_DATAOUT, HIGH);
     digitalWrite(IEC_CLKOUT, LOW);
 #endif
-    udelay(c64slowdown*2);
+    udelay(c64slowdown);
     iec_state = IECOutputState;
   }
 
@@ -825,8 +830,10 @@ static void iec_sendData(struct work_struct *work)
     
     for (pos = 0; !abort && iec_state == IECOutputState && pos < len; pos++) {
       val = wbuf[pos];
+#if 0
       printk(KERN_NOTICE "IEC: sending %i of %i: %i\n",
 	     io->pos + pos - sizeof(io->header), io->header.len, val);
+#endif
       if (pos == len - 1 && !data->next)// && io->header.channel != 15)
 	val |= DATA_EOI;
       abort = iec_writeByte(val);
@@ -1195,6 +1202,11 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
 
     io = device->out.cur;
 
+    if (down_interruptible(&device->lock)) {
+      printk(KERN_NOTICE "IEC: unable to lock IO\n");
+      return;
+    }
+
     if (io->pos < sizeof(io->header)) {
       wbuf = (unsigned char *) &io->header;
       wbuf += io->pos;
@@ -1216,6 +1228,8 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
       len -= remaining;
       iec_appendData(sbuf, len, OUTPUT);
     }
+
+    up(&device->lock);
 
     /* FIXME - lock device while sending data so we can send incomplete buffers */
     if (io->pos == io->header.len + sizeof(io->header))
