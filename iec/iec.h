@@ -27,6 +27,7 @@ typedef struct {
   unsigned char command;
   unsigned char channel;
   uint16_t len;
+  unsigned char eoi;
 } iec_data;
 
 enum {
