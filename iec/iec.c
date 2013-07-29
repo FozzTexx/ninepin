@@ -104,7 +104,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
 
 static iec_device *iec_openDevices[IEC_ALLDEV+1];
 static int iec_deviceCount = 0, iec_curDevice, iec_curChannel;
-static int iec_readAvail = 0;
+static int iec_readAvail = 0, iec_doingRead = 0;
 static short int irq_atn = 0, irq_clk = 0;
 static dev_t iec_devno;
 static struct cdev iec_cdev;
@@ -115,7 +115,8 @@ static int iec_state = 0, iec_atnState = 0;
 static struct workqueue_struct *iec_writeQ, *iec_readQ;
 static int c64slowdown = 10;
 DECLARE_WORK(iec_readWork, iec_processData);
-static DECLARE_WAIT_QUEUE_HEAD(iec_wait);
+static DECLARE_WAIT_QUEUE_HEAD(iec_canRead);
+static DECLARE_WAIT_QUEUE_HEAD(iec_canProcess);
 
 static volatile uint32_t *gpio;
 
@@ -171,7 +172,7 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
 
   
   atn = !digitalRead(IEC_ATN);
-  printk(KERN_NOTICE "IEC: attention %i\n", atn);
+  //printk(KERN_NOTICE "IEC: attention %i\n", atn);
   if (atn) {
     iec_atnState = IECAttentionState;
     iec_state = IECWaitState;
@@ -189,7 +190,7 @@ static irqreturn_t iec_handleATN(int irq, void *dev_id, struct pt_regs *regs)
   return IRQ_HANDLED;
 }
 
-void iec_newIO(int val, int inout)
+void iec_newIO(int val)
 {
   int dev;
   iec_device *device;
@@ -200,11 +201,15 @@ void iec_newIO(int val, int inout)
   if (!(device = iec_openDevices[dev]))
     return;
 
-  if (inout == INPUT)
-    io = &device->in;
-  else
-    io = &device->out;
+  io = &device->in;
+
+  if (io->outpos < 0)
+    printk(KERN_NOTICE "IEC: newIO without sending last one\n");
   
+  while (io->outpos < io->header.len + sizeof(io->header))
+    if (wait_event_interruptible(iec_canProcess, !iec_doingRead))
+      return;
+
   if (down_interruptible(&device->lock)) {
     printk(KERN_NOTICE "IEC: unable to lock IO\n");
     return;
@@ -214,7 +219,7 @@ void iec_newIO(int val, int inout)
   io->header.channel = 0;
   io->header.len = 0;
   io->header.eoi = 0;
-  io->outpos = 0;
+  io->outpos = -1;
   
   up(&device->lock);
 
@@ -280,6 +285,7 @@ static inline int iec_appendData(const char *buf, int buflen, int inout)
     io->header.len += count;
   }
 
+  printk(KERN_NOTICE "IEC: added %i bytes\n", count);
   up(&device->lock);
   
   return count;
@@ -304,8 +310,10 @@ void iec_sendInput(void)
     return;
 
   io = &device->in;
-  iec_readAvail = 1;
-  wake_up_interruptible(&iec_wait);
+  io->outpos = 0;
+  iec_readAvail = iec_doingRead = 1;
+  printk(KERN_NOTICE "IEC: sending input\n");
+  wake_up_interruptible(&iec_canRead);
 
   return;
 }
@@ -401,7 +409,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   if (!atn)
     iec_atnState = IECWaitState;
   
-  printk(KERN_NOTICE "IEC: clock %i/%i %i\n", iec_atnState, atn, iec_state);
+  //printk(KERN_NOTICE "IEC: clock %i/%i %i\n", iec_atnState, atn, iec_state);
   if (iec_atnState != IECAttentionState &&
       (iec_state == IECWaitState || iec_state == IECOutputState || iec_state == IECTalkState))
     return IRQ_HANDLED;
@@ -491,7 +499,7 @@ static void iec_processData(struct work_struct *work)
     avail = (IEC_BUFSIZE + iec_inpos - iec_outpos) % IEC_BUFSIZE;
     if (!avail)
       return;
-  
+
     val = iec_buffer[iec_outpos];
     atn = val & DATA_ATN;
     iec_outpos = (iec_outpos + 1) % IEC_BUFSIZE;
@@ -507,7 +515,7 @@ static void iec_processData(struct work_struct *work)
 	  iec_sendInput();
 	else {
 	  iec_state = IECListenState;
-	  iec_newIO(val, INPUT);
+	  iec_newIO(val);
 	  iec_curDevice = dev;
 	}
 	break;
@@ -517,7 +525,7 @@ static void iec_processData(struct work_struct *work)
 	  iec_sendInput();
 	else {
 	  iec_state = IECTalkState;
-	  iec_newIO(val, INPUT);
+	  iec_newIO(val);
 	  iec_curDevice = dev;
 	}
 	break;
@@ -829,8 +837,12 @@ int iec_open(struct inode *inode, struct file *filp)
     return 0;
   }
 
-  device = iec_openDevices[minor] = kmalloc(sizeof(iec_device), GFP_KERNEL);    
-  device->in.outpos = 0;
+  device = iec_openDevices[minor] = kmalloc(sizeof(iec_device), GFP_KERNEL);
+  device->in.header.command = 0;
+  device->in.header.channel = 0;
+  device->in.header.len = 0;
+  device->in.header.eoi = 0;
+  device->in.outpos = -1;
   device->out.outpos = 0;
   device->flags = filp->f_flags;
   sema_init(&device->lock, 1);
@@ -859,8 +871,9 @@ unsigned int iec_poll(struct file *filp, poll_table *wait)
 
 
   io = &device->in;
-  poll_wait(filp, &iec_wait, wait);
-  avail = (io->header.len + sizeof(io->header)) - io->outpos;
+  poll_wait(filp, &iec_canRead, wait);
+  if (io->outpos >= 0)
+    avail = (io->header.len + sizeof(io->header)) - io->outpos;
   
   pollMask = POLLOUT | POLLWRNORM;
   if (avail)
@@ -881,12 +894,16 @@ ssize_t iec_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 
   do {
     io = &device->in;
-    avail = (io->header.len + sizeof(io->header)) - io->outpos;
-    if (!avail && wait_event_interruptible(iec_wait, iec_readAvail))
+    if (io->outpos >= 0)
+      avail = (io->header.len + sizeof(io->header)) - io->outpos;
+    if (!avail && wait_event_interruptible(iec_canRead, iec_readAvail))
       return -ERESTARTSYS;
     iec_readAvail = 0;
   } while (!avail);
+
+  iec_doingRead = 1;
   
+  printk(KERN_NOTICE "IEC: %i bytes avail\n", avail);
   if (down_interruptible(&device->lock)) {
     printk(KERN_NOTICE "IEC: unable to lock IO\n");
     return 0;
@@ -908,6 +925,9 @@ ssize_t iec_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
   remaining = copy_to_user(buf, wbuf, count);
   up(&device->lock);
 
+  iec_doingRead = 0;
+  wake_up_interruptible(&iec_canProcess);
+  
   count -= remaining;
   io->outpos += count;
   *f_pos += count;
@@ -920,8 +940,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   iec_io *io;
   unsigned long remaining;
   unsigned char *wbuf;
-  int minor = iminor(filp->f_path.dentry->d_inode);
-  size_t len, total, offset;
+  size_t len, offset;
   int abort, val;
 
 
@@ -930,21 +949,11 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   /* FIXME - really only care about EOI unless minor is 0 and acting as master */
   /* FIXME - how to detect EOI? */
   
-  total = count;
   offset = 0;
   abort = 0;
-  while (!abort && total > 0) {
+  while (!abort && count > 0) {
     len = count;
-    
-    if (!device->out.outpos >= device->out.header.len + sizeof(device->out.header))
-      iec_newIO(minor, OUTPUT);
-
     io = &device->out;
-
-    if (down_interruptible(&device->lock)) {
-      printk(KERN_NOTICE "IEC: unable to lock IO\n");
-      return 0;
-    }
 
     if (io->outpos < sizeof(io->header)) {
       wbuf = (unsigned char *) &io->header;
@@ -962,31 +971,34 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
 	iec_releaseBus();
       }
     }
-    else {
-      /* FIXME - find a way to block if writing to channel we are currently sending */
-      //printk(KERN_NOTICE "IEC: appending bytes to channel %i\n", io->header.channel);
-
-      while (iec_state == IECOutputState && !abort) {
-	remaining = copy_from_user(io->buffer, buf+offset, 1);
-	if (!remaining) {
-	  val = io->buffer[0];
-	  if (io->header.eoi && io->outpos + 1 == io->header.len + sizeof(io->header))
-	    val |= DATA_EOI;
-	  abort = iec_writeByte(val);
-	  if (!abort)
-	    len++;
-	}
+    else if (count && iec_state == IECOutputState && !abort) {
+      len = 1;
+      remaining = copy_from_user(io->buffer, buf+offset, len);
+      if (!remaining) {
+	val = io->buffer[0];
+	if (io->header.eoi && io->outpos + 1 == io->header.len + sizeof(io->header))
+	  val |= DATA_EOI;
+#if 0
+	printk(KERN_NOTICE "IEC: sending %02x, %i of %i\n", val,
+	       io->outpos - sizeof(io->header), io->header.len);
+#endif
+	abort = iec_writeByte(val);
+	if (abort)
+	  len = 0;
+	else
+	  io->outpos += len;
       }
     }
 
-    up(&device->lock);
+    if (io->outpos == io->header.len + sizeof(io->header))
+      io->outpos = 0;
 
-    total -= len;
+    count -= len;
     offset += len;
   }
-  
-  *f_pos += count;
-  return count;
+
+  *f_pos += offset;
+  return offset;
 }
 
 module_init(iec_init);
