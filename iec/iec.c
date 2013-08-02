@@ -205,11 +205,14 @@ void iec_newIO(int val)
 
   if (io->outpos < 0)
     printk(KERN_NOTICE "IEC: newIO without sending last one\n");
-  
-  while (io->outpos < io->header.len + sizeof(io->header))
+
+  printk(KERN_NOTICE "IEC: new IO\n");
+  while (io->outpos < io->header.len + sizeof(io->header)) {
+    printk(KERN_NOTICE "IEC: new IO blocked\n");
+    iec_doingRead = 1;
     if (wait_event_interruptible(iec_canProcess, !iec_doingRead))
       return;
-
+  }
   if (down_interruptible(&device->lock)) {
     printk(KERN_NOTICE "IEC: unable to lock IO\n");
     return;
@@ -222,6 +225,7 @@ void iec_newIO(int val)
   io->outpos = -1;
   
   up(&device->lock);
+  printk(KERN_NOTICE "IEC: new IO created\n");
 
   return;
 }
@@ -310,10 +314,12 @@ void iec_sendInput(void)
     return;
 
   io = &device->in;
-  io->outpos = 0;
-  iec_readAvail = iec_doingRead = 1;
-  printk(KERN_NOTICE "IEC: sending input\n");
-  wake_up_interruptible(&iec_canRead);
+  if (io->outpos < 0) {
+    io->outpos = 0;
+    iec_readAvail = iec_doingRead = 1;
+    printk(KERN_NOTICE "IEC: sending input\n");
+    wake_up_interruptible(&iec_canRead);
+  }
 
   return;
 }
@@ -423,7 +429,7 @@ static irqreturn_t iec_handleCLK(int irq, void *dev_id, struct pt_regs *regs)
   /* FIXME - if iec_readAvail is set then buffer is being sent */
   
   val = iec_readByte();
-  printk(KERN_NOTICE "IEC: Read: %03x %i %i\n", val, atn, iec_atnState);
+  //printk(KERN_NOTICE "IEC: Read: %03x %i %i\n", val, atn, iec_atnState);
   if (val >= 0) {
     if (atn) { 
       val |= DATA_ATN;
@@ -503,7 +509,7 @@ static void iec_processData(struct work_struct *work)
     val = iec_buffer[iec_outpos];
     atn = val & DATA_ATN;
     iec_outpos = (iec_outpos + 1) % IEC_BUFSIZE;
-    //printk(KERN_NOTICE "IEC: processing data %02x\n", val);
+    printk(KERN_NOTICE "IEC: processing data %02x\n", val);
 
     if (atn) {
       cmd = val & 0xe0;
@@ -642,8 +648,14 @@ int iec_writeByte(int bits)
   enable_irq(irq_clk);
 
   if (!abort && (abort = iec_waitForSignals(IEC_DATA, 0, IEC_ATN, 0, 10000))) {
-    printk(KERN_NOTICE "IEC: Timeout waiting for listener ack\n");
-    abort = 0;
+    if (!digitalRead(IEC_ATN)) {
+      printk(KERN_NOTICE "IEC: Timeout waiting for listener ack\n");
+      abort = 0;
+    }
+    else {
+      iec_state = IECWaitState;
+      iec_atnState = IECAttentionState;
+    }
   }
 
   udelay(c64slowdown);
@@ -903,7 +915,7 @@ ssize_t iec_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 
   iec_doingRead = 1;
   
-  printk(KERN_NOTICE "IEC: %i bytes avail\n", avail);
+  printk(KERN_NOTICE "IEC: %i bytes avail:", avail);
   if (down_interruptible(&device->lock)) {
     printk(KERN_NOTICE "IEC: unable to lock IO\n");
     return 0;
@@ -922,15 +934,23 @@ ssize_t iec_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
     wbuf = &io->buffer[pos];
   }
 
+  {
+    int i;
+    for (i = 0; i < count; i++)
+      printk(" %02x", wbuf[i]);
+    printk("\n");
+  }
+  
   remaining = copy_to_user(buf, wbuf, count);
   up(&device->lock);
 
-  iec_doingRead = 0;
-  wake_up_interruptible(&iec_canProcess);
-  
   count -= remaining;
   io->outpos += count;
   *f_pos += count;
+
+  iec_doingRead = 0;
+  wake_up_interruptible(&iec_canProcess);
+	 
   return count;
 }
 
@@ -944,7 +964,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
   int abort, val;
 
 
-  //printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
+  printk(KERN_NOTICE "IEC: request to write %i bytes\n", count);
 
   /* FIXME - really only care about EOI unless minor is 0 and acting as master */
   /* FIXME - how to detect EOI? */
@@ -978,7 +998,7 @@ ssize_t iec_write(struct file *filp, const char __user *buf, size_t count, loff_
 	val = io->buffer[0];
 	if (io->header.eoi && io->outpos + 1 == io->header.len + sizeof(io->header))
 	  val |= DATA_EOI;
-#if 0
+#if 1
 	printk(KERN_NOTICE "IEC: sending %02x, %i of %i\n", val,
 	       io->outpos - sizeof(io->header), io->header.len);
 #endif
