@@ -28,6 +28,7 @@ typedef struct {
   unsigned char channel;
   uint16_t len;
   unsigned char eoi;
+  unsigned char serial;
 } iec_data;
 
 enum {
