@@ -17,6 +17,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#include "cbmdos.h"
 #include "iec/iec.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,79 +28,49 @@
 #include <sys/stat.h>
 #include <ctype.h>
 
-typedef enum {
-  CBMOkError = 0,
-  CBMFilesScratchedError = 1,
-  CBMReadHeaderError = 20,
-  CBMReadSyncError = 21,
-  CBMReadChecksumError = 22,
-  CBMReadBlockError = 23,
-  CBMReadOtherError = 24,
-  CBMWriteError = 25,
-  CBMWriteProtectError = 26,
-  CBMRead27Error = 27,
-  CBMWriteSyncError = 28,
-  CBMDiskIDMismatchError = 29,
-  CBMSyntaxError = 30,
-  CBMIllegalCommandError = 31,
-  CBMCommandOverrunError = 32,
-  CBMWildcardError = 33,
-  CBMMissingFilenameError = 34,
-  CBMUSRFileNotFoundError = 39,
-  CBMRecordNotPresentError = 50,
-  CBMRecordOverflowError = 51,
-  CBMFileTooLargeError = 52,
-  CBMWriteFileOpenError = 60,
-  CBMFileNotOpenError = 61,
-  CBMFileNotFoundError = 62,
-  CBMFileExistsError = 63,
-  CBMFileTypeMismatchError = 64,
-  CBMNoBlockError = 65,
-  CBMIllegalBlockError = 66,
-  CBMIllegalTrackSector = 67,
-  CBMNoChannelError = 70,
-  CBMDirectoryError = 71,
-  CBMDiskFullError = 72,
-  CBMVersionError = 73,
-  CBMDriveNotReadyError = 74,
-  CBMSpeedError = 75,
-} CBMDOSError;
-
 typedef struct {
   CBMDOSError err;
   char *str;
 } CBMDOSErrorString;
 
+typedef struct {
+  FILE *file;
+  char *buffer;
+  size_t length, sent;
+  char cache[256];
+  int cpos, clen;
+} CBMDOSChannel;
+
 static CBMDOSErrorString dosErrorStrings[] = {
   {CBMOkError, " OK"},
   {CBMFilesScratchedError, "FILES SCRATCHED"},
-  {CBMReadHeaderError, "READ ERROR"},
-  {CBMReadSyncError, "READ ERROR"},
-  {CBMReadChecksumError, "READ ERROR"},
-  {CBMReadBlockError, "READ ERROR"},
-  {CBMReadOtherError, "READ ERROR"},
-  {CBMWriteError, "WRITE ERROR"},
+  {CBMBlockHeaderError, "READ ERROR"},
+  {CBMSyncCharacterError, "READ ERROR"},
+  {CBMDataBlockError, "READ ERROR"},
+  {CBMDataChecksumError, "READ ERROR"},
+  {CBMByteDecodingError, "READ ERROR"},
+  {CBMWriteVerifyError, "WRITE ERROR"},
   {CBMWriteProtectError, "WRITE PROTECT ON"},
-  {CBMRead27Error, "READ ERROR"},
-  {CBMWriteSyncError, "WRITE ERROR"},
+  {CBMHeaderChecksumError, "READ ERROR"},
+  {CBMDataExtendsNextBlockError, "WRITE ERROR"},
   {CBMDiskIDMismatchError, "DISK ID MISMATCH"},
   {CBMSyntaxError, "SYNTAX ERROR"},
-  {CBMIllegalCommandError, "SYNTAX ERROR"},
+  {CBMInvalidCommandError, "SYNTAX ERROR"},
   {CBMCommandOverrunError, "SYNTAX ERROR"},
-  {CBMWildcardError, "SYNTAX ERROR"},
+  {CBMInvalidFilenameError, "SYNTAX ERROR"},
   {CBMMissingFilenameError, "SYNTAX ERROR"},
-  {CBMUSRFileNotFoundError, "FILE NOT FOUND"},
+  {CBMCommandFileNotFoundError, "FILE NOT FOUND"},
   {CBMRecordNotPresentError, "RECORD NOT PRESENT"},
   {CBMRecordOverflowError, "OVERFLOW IN RECORD"},
   {CBMFileTooLargeError, "FILE TOO LARGE"},
-  {CBMWriteFileOpenError, "WRITE FILE OPEN"},
+  {CBMFileAlreadyOpenError, "WRITE FILE OPEN"},
   {CBMFileNotOpenError, "FILE NOT OPEN"},
   {CBMFileNotFoundError, "FILE NOT FOUND"},
   {CBMFileExistsError, "FILE EXISTS"},
   {CBMFileTypeMismatchError, "FILE TYPE MISMATCH"},
   {CBMNoBlockError, "NO BLOCK"},
-  {CBMIllegalBlockError, "ILLEGAL TRACK OR SECTOR"},
-  {CBMIllegalTrackSector, "ILLEGAL TRACK OR SECTOR"},
+  {CBMIllegalTrackSectorError, "ILLEGAL TRACK OR SECTOR"},
+  {CBMIllegalSystemTrackSectorError, "ILLEGAL TRACK OR SECTOR"},
   {CBMNoChannelError, "NO CHANNEL"},
   {CBMDirectoryError, "DIR ERROR"},
   {CBMDiskFullError, "DISK FULL"},
@@ -111,6 +82,7 @@ static CBMDOSErrorString dosErrorStrings[] = {
 
 /* FIXME - don't use global variables */
 static int dosError = 0, dosTrackError = 0, dosSectorError = 0;
+static CBMDOSChannel dosChannels[16];
 
 void dosFilenameToC64(const char *original, char *c64)
 {
@@ -219,130 +191,167 @@ FILE *dosFindFile(const char *path, const char *mode)
   return file;
 }
 
-FILE *dosSendError(char **bufPtr)
+CBMDOSChannel dosSendError()
 {
-  FILE *file;
   int i;
   size_t len;
+  CBMDOSChannel aChan;
 
 
-  file = open_memstream(bufPtr, &len);
+  aChan.file = open_memstream(&aChan.buffer, &len);
+  aChan.sent = 0;
   for (i = 0; dosErrorStrings[i].str && dosErrorStrings[i].err != dosError; i++)
     ;
-  fprintf(file, "%02i,%s,%02i,%02i\r", dosError, dosErrorStrings[i].str,
+  fprintf(aChan.file, "%02i,%s,%02i,%02i\r", dosError, dosErrorStrings[i].str,
 	  dosTrackError, dosSectorError);
-  rewind(file);
-  return file;
+  fflush(aChan.file);
+  aChan.length = len;
+  fclose(aChan.file);
+  aChan.file = NULL;
+  return aChan;
 }
   
-FILE *dosOpenFile(const char *path, int channel, const char *mode, char **bufPtr)
+CBMDOSChannel dosOpenFile(const char *path, int channel)
 {
   int special = 0;
   int driveNum = 0;
-  const char *fn, *cn;
-  char *filespec;
+  char *filespec, *fn, *cn;
+  CBMDOSChannel aChan;
+  char mode[10];
   
-  
-  /* Prefix: $#/
-     Drive number: decimal
-     Colon
-     Path with wildcards
-     comma followed by type
-     comma followed by mode*/
 
-  if (channel == 15 && !strcmp(mode, "r"))
-    return dosSendError(bufPtr);
+  aChan.file = NULL;
+  aChan.buffer = NULL;
+  aChan.length = 0;
+  aChan.sent = 0;
+  aChan.cpos = aChan.clen = 0;
   
-  filespec = alloca(strlen(path) + 5);
-  strcpy(filespec, path);
-  if ((channel == 0 && !strcmp(mode, "r")) || (channel == 1 && !strcmp(mode, "w")))
-    strcat(filespec, ".PRG");
-  fn = filespec;
-  if (*fn == '$' || *fn == '#' || *fn == '/') {
-    special = *fn;
-    fn++;
-  }
+  if (channel < 15) {
+    /* Prefix: $#/
+       Drive number: decimal
+       Colon
+       Path with wildcards
+       comma followed by type
+       comma followed by mode*/
 
-  cn = strchr(fn, ':');
-  if ((special || cn) && *fn >= '0' && *fn <= '9') {
-    driveNum = atoi(fn);
-    while (isdigit(*fn))
+    filespec = alloca(strlen(path) + 5);
+    strcpy(filespec, path);
+    strcpy(mode, "r");
+    if (channel == 0 || channel == 1) {
+      strcat(filespec, ".PRG");
+      if (channel == 1)
+	strcpy(mode, "w");
+    }
+
+    fn = filespec;
+    if (*fn == '$' || *fn == '#' || *fn == '/') {
+      special = *fn;
       fn++;
-    if (*fn == ':')
-      fn++;
-  }
+    }
 
-  /* FIXME - remap PETSCII characters */
-  /* FIXME - map 16 char names to full names */
+    cn = strchr(fn, ':');
+    if ((special || cn) && *fn >= '0' && *fn <= '9') {
+      driveNum = atoi(fn);
+      while (isdigit(*fn))
+	fn++;
+      if (*fn == ':')
+	fn++;
+    }
 
-  *bufPtr = NULL;
-  if (special == '$') {
-    DIR *dir;
-    struct dirent *dp;
-    size_t len;
-    FILE *file;
-    char *buf, *slash;
-    char filename[32];
-    struct stat st;
-    off_t blocks;
-    int bw, nw;
-    char *exten;
-
-
-    /* FIXME - check driveNum */
-    
-    if (!(dir = opendir(".")))
-      return NULL;
-
-    file = open_memstream(bufPtr, &len);
-    fwrite("\001\004\001\001", 4, 1, file);
-    fwrite("\000\000", 2, 1, file); /* Drive number */
-
-    buf = getcwd(NULL, 0);
-    slash = strrchr(buf, '/') + 1;
-    strncpy(filename, slash, 22);
-    filename[22] = 0;
-    for (bw = 0; filename[bw]; bw++)
-      filename[bw] = toupper(filename[bw]);
-    fprintf(file, "\022\"%s\"%*s", filename, 22 - strlen(filename), " ");
-    fputc(0x00, file);
-    free(buf);
-    
-    for (dp = readdir(dir); dp; dp = readdir(dir))
-      if (dp->d_name[0] != '.') {
-	fwrite("\001\001", 2, 1, file);
-	stat(dp->d_name, &st);
-	blocks = (st.st_size + 255) / 256;
-	if (blocks > 65535)
-	  blocks = 65535;
-	for (bw = 1, nw = 9; blocks > nw; bw++, nw = nw * 10 + 9)
-	  ;
-	dosFilenameToC64(dp->d_name, filename);
-	exten = strrchr(filename, '.');
-	nw = exten - filename;
-	*exten = 0;
-	exten++;
-	fprintf(file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
-		(int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
-		5 - bw, " ", filename, 22 - nw, " ", exten, bw, " ", 0x00);
+    if ((cn = strchr(fn, ','))) {
+      /* FIXME - do something with file type? */
+      *cn = 0;
+      cn++;
+      if ((cn = strchr(cn, ','))) {
+	cn++;
+	if (tolower(*cn) == 'w' || tolower(*cn) == 'a')
+	  mode[0] = tolower(*cn);
       }
+    }
+	
+    /* FIXME - remap PETSCII characters */
+    /* FIXME - map 16 char names to full names */
 
-    fprintf(file, "\001\001%c%cBLOCKS FREE.              %c%c%c",
-	    0xff, 0xff, 0x00, 0x00, 0x00);
+    if (special == '$') {
+      DIR *dir;
+      struct dirent *dp;
+      size_t len;
+      char *buf, *slash;
+      char filename[32];
+      struct stat st;
+      off_t blocks;
+      int bw, nw;
+      char *exten;
 
-    rewind(file);
-    return file;
+
+      /* FIXME - check driveNum */
+    
+      if ((dir = opendir("."))) {
+	aChan.file = open_memstream(&aChan.buffer, &len);
+	fwrite("\001\004\001\001", 4, 1, aChan.file);
+	fwrite("\000\000", 2, 1, aChan.file); /* Drive number */
+
+	buf = getcwd(NULL, 0);
+	slash = strrchr(buf, '/') + 1;
+	strncpy(filename, slash, 22);
+	filename[22] = 0;
+	for (bw = 0; filename[bw]; bw++)
+	  filename[bw] = toupper(filename[bw]);
+	fprintf(aChan.file, "\022\"%s\"%*s", filename, 22 - strlen(filename), " ");
+	fputc(0x00, aChan.file);
+	free(buf);
+    
+	for (dp = readdir(dir); dp; dp = readdir(dir))
+	  if (dp->d_name[0] != '.') {
+	    fwrite("\001\001", 2, 1, aChan.file);
+	    stat(dp->d_name, &st);
+	    blocks = (st.st_size + 255) / 256;
+	    if (blocks > 65535)
+	      blocks = 65535;
+	    for (bw = 1, nw = 9; blocks > nw; bw++, nw = nw * 10 + 9)
+	      ;
+	    dosFilenameToC64(dp->d_name, filename);
+	    exten = strrchr(filename, '.');
+	    nw = exten - filename;
+	    *exten = 0;
+	    exten++;
+	    fprintf(aChan.file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
+		    (int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
+		    5 - bw, " ", filename, 22 - nw, " ", exten, bw, " ", 0x00);
+	  }
+
+	fprintf(aChan.file, "\001\001%c%cBLOCKS FREE.              %c%c%c",
+		0xff, 0xff, 0x00, 0x00, 0x00);
+
+	fflush(aChan.file);
+	aChan.length = len;
+	fclose(aChan.file);
+	aChan.file = NULL;
+      }
+    }
+    else if (special == '#') {
+      /* FIXME - load a d64 image into driveNum */
+    }
+    else if (special == '/') {
+      /* FIXME - change directory */
+    }
+    else {
+      if (mode[0] == 'w') {
+	/* FIXME - don't allow writing to existing files */
+	aChan.file = fopen(fn, mode);
+      }
+      else {
+	aChan.file = dosFindFile(fn, mode);
+	if (aChan.file && mode[0] == 'r') {
+	  fseek(aChan.file, 0, SEEK_END);
+	  aChan.length = ftell(aChan.file);
+	  rewind(aChan.file);
+	}
+      }
+    }
   }
-  else if (special == '#') {
-    /* FIXME - load a d64 image into driveNum */
-  }
-  else if (special == '/') {
-    /* FIXME - change directory */
-  }
-  else
-    return dosFindFile(fn, mode);
   
-  return NULL;
+  return aChan;
 }
 
 extern void dosHandleIO(int fd)
@@ -352,12 +361,9 @@ extern void dosHandleIO(int fd)
   unsigned char *data = NULL;
   int dlen = 0;
   int cmd, dev, sub, chan;
-  char filename[1024], exten[10];
-  FILE *file;
-  char buf[256];
-  char *mem;
   static struct timeval start;
-  static int sentLen;
+  CBMDOSChannel *aChan;
+  static unsigned char serial;
 
 
   len = read(fd, &header, sizeof(header));
@@ -375,18 +381,27 @@ extern void dosHandleIO(int fd)
   dev = header.command & 0x1f;
   sub = header.channel & 0xf0;
   chan = header.channel & 0x0f;
-  fprintf(stderr, "Command: %02x %02x %02x %02x\n", cmd, dev, sub, chan);
-      
+  serial = header.serial;
+  aChan = &dosChannels[chan];
+  {
+    int i;
+    unsigned char *p = (unsigned char *) &header;
+    fprintf(stderr, "Command:");
+    for (i = 0; i < sizeof(header); i++)
+      fprintf(stderr, " %02x", p[i]);
+    fprintf(stderr, "\n");
+  }
+
   switch (cmd) {
   case IECListenCommand:
     switch (sub) {
     case IECOpenCommand:
       fprintf(stderr, "Opening %s\n", data);
-      /* FIXME - make sure filename fits */
-      strcpy(filename, (char *) data);
-      /* FIXME - check command here to set error code. How do I know
-	 if it's a read or write though? Oh right, I check the channel
-	 or the comma stuff.*/
+      *aChan = dosOpenFile((char *) data, chan);
+      if (!aChan->file)
+	dosError = CBMFileNotFoundError;
+      else
+	dosError = CBMOkError;
       break;
 
     case IECCloseCommand:
@@ -403,54 +418,88 @@ extern void dosHandleIO(int fd)
 	seconds = delay;
 	seconds /= 1000000;
 
-	bps = sentLen;
+	bps = aChan->sent;
 	bps /= seconds;
-	    
+
+	if (aChan->file)
+	  fclose(aChan->file);
+	if (aChan->buffer)
+	  free(aChan->buffer);
+	aChan->file = NULL;
+	aChan->buffer = NULL;
+	aChan->length = 0;
+	
 	fprintf(stderr, "Sent %i bytes in %.2f seconds, %.2f bytes/sec\n",
-		sentLen, seconds, bps);
+		aChan->sent, seconds, bps);
       }
       break;
 
     case IECChannelCommand:
       /* Save data */
-      if (chan == 1)
-	strcpy(exten, "PRG");
-      strcat(filename, ".");
-      strcat(filename, exten);
-      file = fopen(filename, "w");
-      fwrite(data, header.len, 1, file);
-      fclose(file);
-      fprintf(stderr, "Saved it to %s\n", filename);
+      if (aChan->file) {
+	fwrite(data, header.len, 1, aChan->file);
+	fclose(aChan->file);
+	aChan->file = NULL;
+	fprintf(stderr, "Saved\n");
+      }
       break;
     }
     break;
 
   case IECTalkCommand:
     if (sub == IECChannelCommand) {
-      header.command = 0;
-      header.channel = chan;
-      header.len = 0;
+      int wlen;
+
+
+      gettimeofday(&start, NULL);
+      if (chan == 15) 
+	dosChannels[chan] = dosSendError();
+
+      header.serial = serial;
+      if (aChan->buffer) {
+	header.command = 0;
+	header.channel = chan;
+	header.len = aChan->length;
+	header.eoi = 1;
 	  
-      if ((file = dosOpenFile(filename, chan, "r", &mem))) {
-	fprintf(stderr, "Sending %s\n", filename);
-	gettimeofday(&start, NULL);
-	
-	fseek(file, 0, SEEK_END);
-	header.len = ftell(file);
-	rewind(file);
+	fprintf(stderr, "\rSending %i bytes\n", header.len);
+	write(fd, (void *) &header, sizeof(header));
+	write(fd, aChan->buffer, aChan->length);
       }
-      else
-	fprintf(stderr, "No such file %s\n", filename);
+      else if (aChan->file) {
+	while (aChan->sent < aChan->length) {
+	  if (aChan->cpos < aChan->clen)
+	    len = aChan->clen - aChan->cpos;
+	  else {
+	    len = fread(aChan->cache, 1, sizeof(aChan->cache), aChan->file);
+	    if (len <= 0)
+	      break;
+	    aChan->cpos = 0;
+	    aChan->clen = len;
+	  }
+
+	  header.command = 0;
+	  header.channel = chan;
+	  header.len = len;
+	  header.eoi = aChan->sent+len == aChan->length;
 	  
-      write(fd, (void *) &header, sizeof(header));
-      
-      if (file) {
-	while ((len = fread(buf, 1, sizeof(buf), file)) > 0)
-	  write(fd, buf, len);
-	fclose(file);
-	if (mem)
-	  free(mem);
-	sentLen = header.len;
+	  write(fd, (void *) &header, sizeof(header));
+	  wlen = write(fd, &aChan->cache[aChan->cpos], len);
+	  aChan->sent += wlen;
+	  aChan->cpos += wlen;
+	  fprintf(stderr, "\rSending %i bytes: %i%%", aChan->length,
+		  (aChan->sent * 100) / aChan->length);
+	  if (wlen < len)
+	    break;
+	}
+	fprintf(stderr, "\n");
+      }
+      else {
+	header.command = 0;
+	header.channel = chan;
+	header.len = 0;
+	header.eoi = 0;
+	write(fd, (void *) &header, sizeof(header));
       }
     }
     break;
