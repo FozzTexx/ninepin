@@ -96,7 +96,7 @@ void dosFilenameToC64(const char *original, char *c64)
   len = strlen(original);
   if (len+1 > buflen) {
     buflen = ((len + 35) / 32) * 32;
-    buf = realloc(buf, len);
+    buf = realloc(buf, buflen);
   }
   strcpy(buf, original);
 
@@ -277,7 +277,7 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
       struct dirent *dp;
       size_t len;
       char *buf, *slash;
-      char filename[32];
+      char filename[64];
       struct stat st;
       off_t blocks;
       int bw, nw;
@@ -300,7 +300,7 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
 	fprintf(aChan.file, "\022\"%s\"%*s", filename, 22 - strlen(filename), " ");
 	fputc(0x00, aChan.file);
 	free(buf);
-    
+
 	for (dp = readdir(dir); dp; dp = readdir(dir))
 	  if (dp->d_name[0] != '.') {
 	    fwrite("\001\001", 2, 1, aChan.file);
@@ -327,6 +327,7 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
 	aChan.length = len;
 	fclose(aChan.file);
 	aChan.file = NULL;
+	closedir(dir);
       }
     }
     else if (special == '#') {
@@ -461,6 +462,7 @@ extern void dosHandleIO(int fd)
 	fprintf(stderr, "\rSending %i bytes\n", header.len);
 	write(fd, (void *) &header, sizeof(header));
 	write(fd, aChan->buffer, aChan->length);
+	aChan->sent = aChan->length;
       }
       else if (aChan->file) {
 	while (aChan->sent < aChan->length) {
