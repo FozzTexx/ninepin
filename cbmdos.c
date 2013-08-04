@@ -436,12 +436,8 @@ extern void dosHandleIO(int fd)
 
     case IECChannelCommand:
       /* Save data */
-      if (aChan->file) {
+      if (aChan->file)
 	fwrite(data, header.len, 1, aChan->file);
-	fclose(aChan->file);
-	aChan->file = NULL;
-	fprintf(stderr, "Saved\n");
-      }
       break;
     }
     break;
