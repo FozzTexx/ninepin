@@ -26,8 +26,6 @@
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
-#include <dirent.h>
-#include <sys/stat.h>
 #include <ctype.h>
 
 typedef struct {
@@ -77,58 +75,7 @@ static CBMDOSErrorString dosErrorStrings[] = {
 /* FIXME - don't use global variables */
 static int dosError = 0, dosTrackError = 0, dosSectorError = 0;
 static CBMDOSChannel dosChannels[16];
-static CBMDrive dosDrive = {NULL, NULL};
-
-void dosFilenameToC64(const char *original, char *c64)
-{
-  static char *buf = NULL;
-  static int buflen = 0;
-  int len, elen;
-  char *exten;
-  int i;
-
-
-  len = strlen(original);
-  if (len+1 > buflen) {
-    buflen = ((len + 35) / 32) * 32;
-    buf = realloc(buf, buflen);
-  }
-  strcpy(buf, original);
-
-  /* FIXME - deal with unofficial UTF8 PETSCII mapping */  
-  for (i = 0; i < len; i++)
-    buf[i] = toupper(buf[i]);
-  if (!(exten = strrchr(buf, '.'))) {
-    elen = len;
-    exten = "USR";
-  }
-  else {
-    elen = exten - buf;
-    exten++;
-
-    if (!strcmp(exten, "TXT"))
-      strcpy(exten, "SEQ");
-
-    if (strcmp(exten, "SEQ") && strcmp(exten, "USR") &&	strcmp(exten, "PRG")) {
-      elen = len;
-      exten = "USR";
-    }
-  }
-
-  if (elen > 16) {
-    elen = 14;
-    buf[elen] = '#';
-    buf[elen+1] = '1';
-    /* FIXME - enumerate all files in directory and make sure this isn't a duplicate */
-  }
-
-  buf[elen] = '.';
-  strncpy(c64, buf, elen);
-  c64[elen] = '.';
-  c64[elen+1] = 0;
-  strcat(c64, exten);
-  return;
-}
+static CBMDrive dosDrive = {{NULL, NULL}, NULL, NULL};
 
 int dosWildcardMatch(const char *pattern, const char *str)
 {
@@ -189,9 +136,7 @@ CBMDOSChannel dosSendError()
 CBMDOSChannel dosOpenFile(const char *path, int channel)
 {
   int special = 0;
-#if 0
   int driveNum = 0;
-#endif
   char *filespec, *fn, *cn;
   CBMDOSChannel aChan;
   char mode[10];
@@ -229,9 +174,7 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
 
     cn = strchr(fn, ':');
     if ((special || cn) && (*fn == ':' || (*fn >= '0' && *fn <= '9'))) {
-#if 0
       driveNum = atoi(fn);
-#endif
       while (isdigit(*fn))
 	fn++;
       if (*fn == ':')
@@ -252,76 +195,21 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
     /* FIXME - remap PETSCII characters */
     /* FIXME - map 16 char names to full names */
 
-    if (special == '$') {
-      DIR *dir;
-      struct dirent *dp;
-      size_t len;
-      char *buf, *slash;
-      char filename[64];
-      struct stat st;
-      off_t blocks;
-      int bw, nw;
-      char *exten;
-
-
-      /* FIXME - check driveNum */
-    
-      if ((dir = opendir("."))) {
-	aChan.file = open_memstream(&aChan.buffer, &len);
-	fwrite("\001\004\001\001", 4, 1, aChan.file);
-	fwrite("\000\000", 2, 1, aChan.file); /* Drive number */
-
-	buf = getcwd(NULL, 0);
-	slash = strrchr(buf, '/') + 1;
-	strncpy(filename, slash, 22);
-	filename[22] = 0;
-	for (bw = 0; filename[bw]; bw++)
-	  filename[bw] = toupper(filename[bw]);
-	fprintf(aChan.file, "\022\"%s\"%*s", filename, 22 - strlen(filename), " ");
-	fputc(0x00, aChan.file);
-	free(buf);
-
-	for (dp = readdir(dir); dp; dp = readdir(dir))
-	  if (dp->d_name[0] != '.') {
-	    fwrite("\001\001", 2, 1, aChan.file);
-	    stat(dp->d_name, &st);
-	    blocks = (st.st_size + 255) / 256;
-	    if (blocks > 65535)
-	      blocks = 65535;
-	    for (bw = 1, nw = 9; blocks > nw; bw++, nw = nw * 10 + 9)
-	      ;
-	    dosFilenameToC64(dp->d_name, filename);
-	    exten = strrchr(filename, '.');
-	    nw = exten - filename;
-	    *exten = 0;
-	    exten++;
-	    fprintf(aChan.file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
-		    (int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
-		    5 - bw, " ", filename, 22 - nw, " ", exten, bw, " ", 0x00);
-	  }
-
-	fprintf(aChan.file, "\001\001%c%cBLOCKS FREE.              %c%c%c",
-		0xff, 0xff, 0x00, 0x00, 0x00);
-
-	fflush(aChan.file);
-	aChan.length = len;
-	fclose(aChan.file);
-	aChan.file = NULL;
-	closedir(dir);
-      }
-    }
+    if (special == '$')
+      aChan = dosDrive.directory(&dosDrive.data, driveNum);
     else if (special == '#') {
-      if (dosDrive.data)
-	free(dosDrive.data);
+      if (dosDrive.data.image)
+	free(dosDrive.data.image);
       /* FIXME - check for failure */
-      dosDrive.data = d64MountDisk(fn);
+      d64MountDisk(&dosDrive.data, fn);
       dosDrive.opener = d64OpenFile;
+      dosDrive.directory = d64GetDirectory;
     }
     else if (special == '/') {
       /* FIXME - change directory */
     }
     else
-      aChan = dosDrive.opener(dosDrive.data, fn, mode);
+      aChan = dosDrive.opener(&dosDrive.data, fn, mode);
   }
   
   return aChan;
@@ -340,10 +228,12 @@ extern void dosHandleIO(int fd)
 
 
   /* FIXME - make a real init method */
-  if (!dosDrive.data) {
-    dosDrive.data = malloc(2);
-    strcpy(dosDrive.data, ".");
+  if (!dosDrive.data.directory) {
+    dosDrive.data.directory = malloc(2);
+    dosDrive.data.image = NULL;
+    strcpy(dosDrive.data.directory, ".");
     dosDrive.opener = localOpenFile;
+    dosDrive.directory = localGetDirectory;
   }
   
   len = read(fd, &header, sizeof(header));

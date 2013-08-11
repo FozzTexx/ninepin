@@ -22,7 +22,8 @@
 
 #include "cbmdos.h"
 
-extern void *d64MountDisk(const char *path);
-extern CBMDOSChannel d64OpenFile(void *data, const char *path, const char *mode);
+extern int d64MountDisk(CBMDriveData *data, const char *path);
+extern CBMDOSChannel d64OpenFile(CBMDriveData *data, const char *path, const char *mode);
+extern CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum);
 
 #endif /* _D64FS_H */
