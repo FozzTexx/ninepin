@@ -25,5 +25,6 @@
 extern FILE *localFindFile(const char *directory, const char *path, const char *mode);
 extern CBMDOSChannel localOpenFile(CBMDriveData *data, const char *path, const char *mode);
 extern CBMDOSChannel localGetDirectory(CBMDriveData *data, int driveNum);
+extern int localChangeDirectory(CBMDriveData *data, const char *path);
 
 #endif /* _LOCALFS_H */

@@ -196,17 +196,21 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
     /* FIXME - map 16 char names to full names */
 
     if (special == '$')
-      aChan = dosDrive.directory(&dosDrive.data, driveNum);
+      aChan = dosDrive.listDirectory(&dosDrive.data, driveNum);
     else if (special == '#') {
       if (dosDrive.data.image)
 	free(dosDrive.data.image);
       /* FIXME - check for failure */
       d64MountDisk(&dosDrive.data, fn);
       dosDrive.opener = d64OpenFile;
-      dosDrive.directory = d64GetDirectory;
+      dosDrive.listDirectory = d64GetDirectory;
     }
     else if (special == '/') {
-      /* FIXME - change directory */
+      /* FIXME - tell user it's an error to change dirs while d64 is
+	 mounted */
+      if (!dosDrive.data.image)
+	dosDrive.cd(&dosDrive.data, fn);
+      /* FIXME - check if cd was successful */
     }
     else
       aChan = dosDrive.opener(&dosDrive.data, fn, mode);
@@ -229,11 +233,11 @@ extern void dosHandleIO(int fd)
 
   /* FIXME - make a real init method */
   if (!dosDrive.data.directory) {
-    dosDrive.data.directory = malloc(2);
+    dosDrive.data.directory = strdup(".");
     dosDrive.data.image = NULL;
-    strcpy(dosDrive.data.directory, ".");
     dosDrive.opener = localOpenFile;
-    dosDrive.directory = localGetDirectory;
+    dosDrive.listDirectory = localGetDirectory;
+    dosDrive.cd = localChangeDirectory;
   }
   
   len = read(fd, &header, sizeof(header));

@@ -24,6 +24,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <sys/param.h>
 
 FILE *localFindFile(const char *directory, const char *path, const char *mode)
 {
@@ -188,4 +189,68 @@ CBMDOSChannel localGetDirectory(CBMDriveData *data, int driveNum)
   }
 
   return aChan;
+}
+
+int localChangeDirectory(CBMDriveData *data, const char *path)
+{
+  char *userPath;
+  char newdir[MAXPATHLEN];
+  int len;
+  DIR *dir;
+  struct dirent *dp;
+  char *sep;
+
+
+  if (!*path)
+    return 1;
+
+  /* FIXME - check for ~ or whatever C64 can type */
+  if (*path == '/') {
+    strcpy(newdir, "/");
+    while (*path && *path == '/')
+      path++;
+  }
+  else
+    strcpy(newdir, data->directory);
+
+  len = strlen(path);
+  while (len && path[len-1] == '/')
+    len--;
+  
+  if (len) {
+    userPath = alloca(len+1);
+    strncpy(userPath, path, len);
+    userPath[len] = 0;
+    sep = userPath;
+
+    while (*userPath) {
+      if (!(sep = strchr(sep, '/')))
+	sep = userPath + strlen(userPath);
+      else {
+	*sep = 0;
+	sep++;
+      }
+
+      if (!(dir = opendir(newdir)))
+	return 0;
+
+      for (dp = readdir(dir); dp; dp = readdir(dir))
+	if (dosWildcardMatch(userPath, dp->d_name)) {
+	  if (newdir[strlen(newdir)-1] != '/')
+	    strcat(newdir, "/");
+	  strcat(newdir, dp->d_name);
+	  break;
+	}
+
+      closedir(dir);
+      if (!dp)
+	return 0;
+      userPath = sep;
+    }
+  }
+
+  free(data->directory);
+  data->directory = strdup(newdir);
+
+  return 1;
 }

@@ -36,12 +36,14 @@ typedef struct {
 } CBMDriveData;
 
 typedef CBMDOSChannel (*CBMFileOpener)(CBMDriveData *, const char *, const char *);
-typedef CBMDOSChannel (*CBMDirectory)(CBMDriveData *, int);
+typedef CBMDOSChannel (*CBMDirListing)(CBMDriveData *, int);
+typedef int (*CBMChangeDir)(CBMDriveData *, const char *);
 
 typedef struct {
   CBMDriveData data;
   CBMFileOpener opener;
-  CBMDirectory directory;
+  CBMDirListing listDirectory;
+  CBMChangeDir cd;
 } CBMDrive;
 
 typedef enum {
