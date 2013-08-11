@@ -250,7 +250,8 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
     if (filename[nw] != 0xa0)
       break;
   filename[nw+1] = 0;
-  fprintf(aChan.file, "\022\"%s\"%*s", filename, 22 - strlen(filename), " ");
+  fprintf(aChan.file, "\022\"%s%*s\" %c%c %02X", filename, 16 - strlen(filename), " ",
+	  bam->diskID[0], bam->diskID[1], bam->version);
   fputc(0x00, aChan.file);
 
   curTrack = 18;
@@ -275,7 +276,7 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
 	nw = strlen(filename);
 	fprintf(aChan.file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
 		(int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
-		5 - bw, " ", filename, 22 - nw, " ", exten, bw, " ", 0x00);
+		5 - bw, " ", filename, 16 - nw, " ", exten, bw + 6, " ", 0x00);
       }
     }
     curTrack = entry->track;

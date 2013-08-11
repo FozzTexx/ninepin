@@ -198,12 +198,10 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
     if (special == '$')
       aChan = dosDrive.listDirectory(&dosDrive.data, driveNum);
     else if (special == '#') {
-      if (dosDrive.data.image)
-	free(dosDrive.data.image);
-      /* FIXME - check for failure */
-      d64MountDisk(&dosDrive.data, fn);
-      dosDrive.opener = d64OpenFile;
-      dosDrive.listDirectory = d64GetDirectory;
+      if (d64MountDisk(&dosDrive.data, fn)) {
+	dosDrive.opener = d64OpenFile;
+	dosDrive.listDirectory = d64GetDirectory;
+      }
     }
     else if (special == '/') {
       /* FIXME - tell user it's an error to change dirs while d64 is

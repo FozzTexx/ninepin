@@ -31,6 +31,7 @@ FILE *localFindFile(const char *directory, const char *path, const char *mode)
   DIR *dir;
   struct dirent *dp;
   FILE *file = NULL;
+  char *fullpath;
 
 
   if (!(dir = opendir(directory)))
@@ -38,7 +39,13 @@ FILE *localFindFile(const char *directory, const char *path, const char *mode)
 
   for (dp = readdir(dir); dp; dp = readdir(dir))
     if (dosWildcardMatch(path, dp->d_name)) {
-      file = fopen(dp->d_name, mode);
+      fullpath = alloca(strlen(directory) + strlen(dp->d_name) + 2);
+      strcpy(fullpath, directory);
+      if (fullpath[strlen(fullpath)-1] != '/')
+	strcat(fullpath, "/");
+      strcat(fullpath, dp->d_name);
+      file = fopen(fullpath, mode);
+      fprintf(stderr, "Found \"%s\"\n", fullpath);
       break;
     }
 
@@ -151,11 +158,11 @@ CBMDOSChannel localGetDirectory(CBMDriveData *data, int driveNum)
 
     buf = getcwd(NULL, 0);
     slash = strrchr(buf, '/') + 1;
-    strncpy(filename, slash, 22);
-    filename[22] = 0;
+    strncpy(filename, slash, 16);
+    filename[16] = 0;
     for (bw = 0; filename[bw]; bw++)
       filename[bw] = toupper(filename[bw]);
-    fprintf(aChan.file, "\022\"%s\"%*s", filename, 22 - strlen(filename), " ");
+    fprintf(aChan.file, "\022\"%s%*s\" NP 2A", filename, 16 - strlen(filename), " ");
     fputc(0x00, aChan.file);
     free(buf);
 
@@ -175,7 +182,7 @@ CBMDOSChannel localGetDirectory(CBMDriveData *data, int driveNum)
 	exten++;
 	fprintf(aChan.file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
 		(int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
-		5 - bw, " ", filename, 22 - nw, " ", exten, bw, " ", 0x00);
+		5 - bw, " ", filename, 16 - nw, " ", exten, bw + 6, " ", 0x00);
       }
 
     fprintf(aChan.file, "\001\001%c%cBLOCKS FREE.              %c%c%c",
@@ -235,7 +242,7 @@ int localChangeDirectory(CBMDriveData *data, const char *path)
 	return 0;
 
       for (dp = readdir(dir); dp; dp = readdir(dir))
-	if (dosWildcardMatch(userPath, dp->d_name)) {
+	if (dp->d_type == DT_DIR && dosWildcardMatch(userPath, dp->d_name)) {
 	  if (newdir[strlen(newdir)-1] != '/')
 	    strcat(newdir, "/");
 	  strcat(newdir, dp->d_name);
