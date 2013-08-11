@@ -18,6 +18,8 @@
  */
 
 #include "cbmdos.h"
+#include "d64fs.h"
+#include "localfs.h"
 #include "iec/iec.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,14 +34,6 @@ typedef struct {
   CBMDOSError err;
   char *str;
 } CBMDOSErrorString;
-
-typedef struct {
-  FILE *file;
-  char *buffer;
-  size_t length, sent;
-  char cache[256];
-  int cpos, clen;
-} CBMDOSChannel;
 
 static CBMDOSErrorString dosErrorStrings[] = {
   {CBMOkError, " OK"},
@@ -83,6 +77,7 @@ static CBMDOSErrorString dosErrorStrings[] = {
 /* FIXME - don't use global variables */
 static int dosError = 0, dosTrackError = 0, dosSectorError = 0;
 static CBMDOSChannel dosChannels[16];
+static CBMDrive dosDrive = {NULL, NULL};
 
 void dosFilenameToC64(const char *original, char *c64)
 {
@@ -171,26 +166,6 @@ int dosWildcardMatch(const char *pattern, const char *str)
   goto loopStart;
 }
 
-FILE *dosFindFile(const char *path, const char *mode)
-{
-  DIR *dir;
-  struct dirent *dp;
-  FILE *file = NULL;
-
-
-  if (!(dir = opendir(".")))
-    return NULL;
-
-  for (dp = readdir(dir); dp; dp = readdir(dir))
-    if (dosWildcardMatch(path, dp->d_name)) {
-      file = fopen(dp->d_name, mode);
-      break;
-    }
-
-  closedir(dir);
-  return file;
-}
-
 CBMDOSChannel dosSendError()
 {
   int i;
@@ -214,7 +189,9 @@ CBMDOSChannel dosSendError()
 CBMDOSChannel dosOpenFile(const char *path, int channel)
 {
   int special = 0;
+#if 0
   int driveNum = 0;
+#endif
   char *filespec, *fn, *cn;
   CBMDOSChannel aChan;
   char mode[10];
@@ -237,11 +214,6 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
     filespec = alloca(strlen(path) + 5);
     strcpy(filespec, path);
     strcpy(mode, "r");
-    if (channel == 0 || channel == 1) {
-      strcat(filespec, ".PRG");
-      if (channel == 1)
-	strcpy(mode, "w");
-    }
 
     fn = filespec;
     if (*fn == '$' || *fn == '#' || *fn == '/') {
@@ -249,9 +221,17 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
       fn++;
     }
 
+    if ((channel == 0 || channel == 1) && !special) {
+      strcat(fn, ".PRG");
+      if (channel == 1)
+	strcpy(mode, "w");
+    }
+
     cn = strchr(fn, ':');
-    if ((special || cn) && *fn >= '0' && *fn <= '9') {
+    if ((special || cn) && (*fn == ':' || (*fn >= '0' && *fn <= '9'))) {
+#if 0
       driveNum = atoi(fn);
+#endif
       while (isdigit(*fn))
 	fn++;
       if (*fn == ':')
@@ -331,25 +311,17 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
       }
     }
     else if (special == '#') {
-      /* FIXME - load a d64 image into driveNum */
+      if (dosDrive.data)
+	free(dosDrive.data);
+      /* FIXME - check for failure */
+      dosDrive.data = d64MountDisk(fn);
+      dosDrive.opener = d64OpenFile;
     }
     else if (special == '/') {
       /* FIXME - change directory */
     }
-    else {
-      if (mode[0] == 'w') {
-	/* FIXME - don't allow writing to existing files */
-	aChan.file = fopen(fn, mode);
-      }
-      else {
-	aChan.file = dosFindFile(fn, mode);
-	if (aChan.file && mode[0] == 'r') {
-	  fseek(aChan.file, 0, SEEK_END);
-	  aChan.length = ftell(aChan.file);
-	  rewind(aChan.file);
-	}
-      }
-    }
+    else
+      aChan = dosDrive.opener(dosDrive.data, fn, mode);
   }
   
   return aChan;
@@ -361,12 +333,19 @@ extern void dosHandleIO(int fd)
   iec_data header;
   unsigned char *data = NULL;
   int dlen = 0;
-  int cmd, dev, sub, chan;
+  int cmd, /*dev,*/ sub, chan;
   static struct timeval start;
   CBMDOSChannel *aChan;
   static unsigned char serial;
 
 
+  /* FIXME - make a real init method */
+  if (!dosDrive.data) {
+    dosDrive.data = malloc(2);
+    strcpy(dosDrive.data, ".");
+    dosDrive.opener = localOpenFile;
+  }
+  
   len = read(fd, &header, sizeof(header));
   fprintf(stderr, "Data %i\n", header.len);
   if (dlen < header.len + 1) {
@@ -379,7 +358,9 @@ extern void dosHandleIO(int fd)
   }
 
   cmd = header.command & 0xe0;
+#if 0
   dev = header.command & 0x1f;
+#endif
   sub = header.channel & 0xf0;
   chan = header.channel & 0x0f;
   serial = header.serial;
@@ -399,7 +380,7 @@ extern void dosHandleIO(int fd)
     case IECOpenCommand:
       fprintf(stderr, "Opening %s\n", data);
       *aChan = dosOpenFile((char *) data, chan);
-      if (!aChan->file)
+      if (!aChan->file && !aChan->buffer)
 	dosError = CBMFileNotFoundError;
       else
 	dosError = CBMOkError;

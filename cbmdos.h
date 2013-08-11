@@ -17,6 +17,26 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#ifndef _CBMDOS_H
+#define _CBMDOS_H
+
+#include <stdio.h>
+
+typedef struct {
+  FILE *file;
+  char *buffer;
+  size_t length, sent;
+  char cache[256];
+  int cpos, clen;
+} CBMDOSChannel;
+
+typedef CBMDOSChannel (*CBMFileOpener)(void *, const char *, const char *);
+
+typedef struct {
+  void *data;
+  CBMFileOpener opener;
+} CBMDrive;
+
 typedef enum {
   CBMOkError = 0,
   CBMFilesScratchedError = 1,
@@ -56,3 +76,6 @@ typedef enum {
 } CBMDOSError;
 
 extern void dosHandleIO(int fd);
+extern int dosWildcardMatch(const char *pattern, const char *str);
+
+#endif /* _CBMDOS_H */
