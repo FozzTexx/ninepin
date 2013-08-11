@@ -107,12 +107,41 @@ int d64MountDisk(CBMDriveData *data, const char *path)
   return 0;
 }
 
+const char *d64Extension(int filetype)
+{
+  int ft;
+  const char *exten = NULL;
+  
+
+  /* FIXME - look at other bits in filetype to set additional info */
+  ft = filetype & 0x0f;
+  switch (ft) {
+  case 0x00:
+    exten = "DEL";
+    break;
+  case 0x01:
+    exten = "SEQ";
+    break;
+  case 0x02:
+    exten = "PRG";
+    break;
+  case 0x03:
+    exten = "USR";
+    break;
+  case 0x04:
+    exten = "REL";
+    break;
+  }
+
+  return exten;
+}
+  
 CBMDirectoryEntry *d64FindFile(char *d64image, const char *path)
 {
   int curTrack, curSect;
   CBMDirectoryEntry *entry;
   int count, ft;
-  char filename[20];
+  char filename[32];
   int i;
 
 
@@ -129,6 +158,11 @@ CBMDirectoryEntry *d64FindFile(char *d64image, const char *path)
 	  if (filename[i] != 0xa0)
 	    break;
 	filename[i+1] = 0;
+
+	/* Add .PRG to filename since dosOpenFile will automatically append it */
+	if (ft == 0x02)
+	  strcat(filename, ".PRG");
+	
 	if (dosWildcardMatch(path, filename))
 	  return &entry[count];
       }
@@ -193,7 +227,7 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
   char filename[64];
   off_t blocks;
   int bw, nw;
-  char *exten;
+  const char *exten;
   CBMBAM *bam;
   CBMDOSChannel aChan;
   int curTrack, curSect;
@@ -237,23 +271,7 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
 	blocks = entry[count].sectorCount;
 	for (bw = 1, nw = 9; blocks > nw; bw++, nw = nw * 10 + 9)
 	  ;
-	switch (ft) {
-	case 0x00:
-	  exten = "DEL";
-	  break;
-	case 0x01:
-	  exten = "SEQ";
-	  break;
-	case 0x02:
-	  exten = "PRG";
-	  break;
-	case 0x03:
-	  exten = "USR";
-	  break;
-	case 0x04:
-	  exten = "REL";
-	  break;
-	}
+	exten = d64Extension(entry[count].filetype);
 	nw = strlen(filename);
 	fprintf(aChan.file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
 		(int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
