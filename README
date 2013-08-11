@@ -43,11 +43,11 @@ insmod.
 If you are using the 3 pin mode, then the CLK and DATA pins are used
 for both input and output. You can either use a bidirection 3.3V to 5V
 level shifter, or do what I did and use some resistors to make a
-voltage divider. The voltage divider works fine for me, but I only
-have the C64 and the Raspberry Pi on the bus. Adding other devices
-could cause the voltage levels to increase to more than the Raspberry
-Pi GPIO pins can tolerate. For each pin I'm using a 1k and 1.5k
-resistor.
+voltage divider (see VoltageDivider.png). The voltage divider works
+fine for me, but I only have the C64 and the Raspberry Pi on the
+bus. Adding other devices could cause the voltage levels to increase
+to more than the Raspberry Pi GPIO pins can tolerate. For each pin I'm
+using a 1k and 1.5k resistor.
 
 In 5 pin mode, 3 pins are used to read the signals, and 2 others are
 used to send output. This allows the use of unidirectional level
