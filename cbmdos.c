@@ -148,71 +148,76 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
   aChan.sent = 0;
   aChan.cpos = aChan.clen = 0;
   
-  if (channel < 15) {
-    /* Prefix: $#/
-       Drive number: decimal
-       Colon
-       Path with wildcards
-       comma followed by type
-       comma followed by mode*/
+  /* Prefix: $#/
+     Drive number: decimal
+     Colon
+     Path with wildcards
+     comma followed by type
+     comma followed by mode*/
 
-    filespec = alloca(strlen(path) + 5);
-    strcpy(filespec, path);
-    strcpy(mode, "r");
+  filespec = alloca(strlen(path) + 5);
+  strcpy(filespec, path);
+  strcpy(mode, "r");
 
-    fn = filespec;
-    if (*fn == '$' || *fn == '#' || *fn == '/') {
-      special = *fn;
-      fn++;
-    }
-
-    if ((channel == 0 || channel == 1) && !special) {
-      strcat(fn, ".PRG");
-      if (channel == 1)
-	strcpy(mode, "w");
-    }
-
-    cn = strchr(fn, ':');
-    if ((special || cn) && (*fn == ':' || (*fn >= '0' && *fn <= '9'))) {
-      driveNum = atoi(fn);
-      while (isdigit(*fn))
-	fn++;
-      if (*fn == ':')
-	fn++;
-    }
-
-    if ((cn = strchr(fn, ','))) {
-      /* FIXME - do something with file type? */
-      *cn = 0;
-      cn++;
-      if ((cn = strchr(cn, ','))) {
-	cn++;
-	if (tolower(*cn) == 'w' || tolower(*cn) == 'a')
-	  mode[0] = tolower(*cn);
-      }
-    }
-	
-    /* FIXME - remap PETSCII characters */
-    /* FIXME - map 16 char names to full names */
-
-    if (special == '$')
-      aChan = dosDrive.listDirectory(&dosDrive.data, driveNum);
-    else if (special == '#') {
-      if (d64MountDisk(&dosDrive.data, fn)) {
-	dosDrive.opener = d64OpenFile;
-	dosDrive.listDirectory = d64GetDirectory;
-      }
-    }
-    else if (special == '/') {
-      /* FIXME - tell user it's an error to change dirs while d64 is
-	 mounted */
-      if (!dosDrive.data.image)
-	dosDrive.cd(&dosDrive.data, fn);
-      /* FIXME - check if cd was successful */
-    }
-    else
-      aChan = dosDrive.opener(&dosDrive.data, fn, mode);
+  fn = filespec;
+  if (*fn == '$' || *fn == '#' || *fn == '/') {
+    special = *fn;
+    fn++;
   }
+
+  if ((channel == 0 || channel == 1) && !special) {
+    strcat(fn, ".PRG");
+    if (channel == 1)
+      strcpy(mode, "w");
+  }
+  
+  cn = strchr(fn, ':');
+  if ((special || cn) && (*fn == ':' || (*fn >= '0' && *fn <= '9'))) {
+    driveNum = atoi(fn);
+    while (isdigit(*fn))
+      fn++;
+    if (*fn == ':')
+      fn++;
+  }
+
+  if ((cn = strchr(fn, ','))) {
+    /* FIXME - do something with file type? */
+    *cn = 0;
+    cn++;
+    if ((cn = strchr(cn, ','))) {
+      cn++;
+      if (tolower(*cn) == 'w' || tolower(*cn) == 'a')
+	mode[0] = tolower(*cn);
+    }
+  }
+  
+  /* FIXME - remap PETSCII characters */
+  /* FIXME - map 16 char names to full names */
+
+  if (special == '$')
+    aChan = dosDrive.listDirectory(&dosDrive.data, driveNum);
+  else if (special == '#') {
+    if (!*fn) {
+      if (dosDrive.data.image)
+	free(dosDrive.data.image);
+      dosDrive.data.image = NULL;
+      dosDrive.opener = localOpenFile;
+      dosDrive.listDirectory = localGetDirectory;
+    }
+    else if (d64MountDisk(&dosDrive.data, fn)) {
+      dosDrive.opener = d64OpenFile;
+      dosDrive.listDirectory = d64GetDirectory;
+    }
+  }
+  else if (special == '/') {
+    /* FIXME - tell user it's an error to change dirs while d64 is
+       mounted */
+    if (!dosDrive.data.image)
+      dosDrive.cd(&dosDrive.data, fn);
+    /* FIXME - check if cd was successful */
+  }
+  else
+    aChan = dosDrive.opener(&dosDrive.data, fn, mode);
   
   return aChan;
 }
@@ -239,7 +244,6 @@ extern void dosHandleIO(int fd)
   }
   
   len = read(fd, &header, sizeof(header));
-  fprintf(stderr, "Data %i\n", header.len);
   if (dlen < header.len + 1) {
     dlen = header.len + 1;
     data = realloc(data, dlen);
@@ -270,7 +274,7 @@ extern void dosHandleIO(int fd)
   case IECListenCommand:
     switch (sub) {
     case IECOpenCommand:
-      fprintf(stderr, "Opening %s\n", data);
+      fprintf(stderr, "Opening chan %i \"%s\"\n", chan, data);
       *aChan = dosOpenFile((char *) data, chan);
       if (!aChan->file && !aChan->buffer)
 	dosError = CBMFileNotFoundError;
@@ -326,25 +330,22 @@ extern void dosHandleIO(int fd)
 	dosChannels[chan] = dosSendError();
 
       header.serial = serial;
-      if (aChan->buffer) {
-	header.command = 0;
-	header.channel = chan;
-	header.len = aChan->length;
-	header.eoi = 1;
-	  
-	fprintf(stderr, "\rSending %i bytes\n", header.len);
-	write(fd, (void *) &header, sizeof(header));
-	write(fd, aChan->buffer, aChan->length);
-	aChan->sent = aChan->length;
-      }
-      else if (aChan->file) {
+      if (aChan->buffer || aChan->file) {
 	while (aChan->sent < aChan->length) {
 	  if (aChan->cpos < aChan->clen)
 	    len = aChan->clen - aChan->cpos;
 	  else {
-	    len = fread(aChan->cache, 1, sizeof(aChan->cache), aChan->file);
-	    if (len <= 0)
-	      break;
+	    if (aChan->file) {
+	      len = fread(aChan->cache, 1, sizeof(aChan->cache), aChan->file);
+	      if (len <= 0)
+		break;
+	    }
+	    else {
+	      len = aChan->length - aChan->sent;
+	      if (len > sizeof(aChan->cache))
+		len = sizeof(aChan->cache);
+	      memmove(aChan->cache, aChan->buffer + aChan->sent, len);
+	    }
 	    aChan->cpos = 0;
 	    aChan->clen = len;
 	  }

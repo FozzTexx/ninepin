@@ -38,7 +38,7 @@ FILE *localFindFile(const char *directory, const char *path, const char *mode)
     return NULL;
 
   for (dp = readdir(dir); dp; dp = readdir(dir))
-    if (dosWildcardMatch(path, dp->d_name)) {
+    if (dp->d_type == DT_REG && dosWildcardMatch(path, dp->d_name)) {
       fullpath = alloca(strlen(directory) + strlen(dp->d_name) + 2);
       strcpy(fullpath, directory);
       if (fullpath[strlen(fullpath)-1] != '/')
@@ -250,12 +250,15 @@ int localChangeDirectory(CBMDriveData *data, const char *path)
 	}
 
       closedir(dir);
-      if (!dp)
+      if (!dp) {
+	fprintf(stderr, "Failed to find %s\n", userPath);
 	return 0;
+      }
       userPath = sep;
     }
   }
 
+  fprintf(stderr, "Changing to \"%s\"\n", newdir);
   free(data->directory);
   data->directory = strdup(newdir);
 

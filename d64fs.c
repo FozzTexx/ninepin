@@ -87,6 +87,8 @@ int d64MountDisk(CBMDriveData *data, const char *path)
 
 
   /* FIXME - check for .d64 extension in path */
+  /* FIXME - allow user to specify full path */
+  
   if ((file = localFindFile(data->directory, path, "r"))) {
     fseek(file, 0, SEEK_END);
     len = ftell(file);
@@ -163,8 +165,10 @@ CBMDirectoryEntry *d64FindFile(char *d64image, const char *path)
 	if (ft == 0x02)
 	  strcat(filename, ".PRG");
 	
-	if (dosWildcardMatch(path, filename))
+	if (dosWildcardMatch(path, filename)) {
+	  fprintf(stderr, "Found \"%s\"\n", filename);
 	  return &entry[count];
+	}
       }
     }
 
