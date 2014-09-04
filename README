@@ -22,7 +22,7 @@ CD4016 switches and a 74HC595 shift register.
 
 In order to use the joystick interface, the program needs to be run as
 root. If the program is not run as root the joystick routines will be
-disable, although the disk functionality will still work. Eventually I
+disabled, although the disk functionality will still work. Eventually I
 plan to move the GPIO for handling the ninepin switching into another
 kernel module.
 
