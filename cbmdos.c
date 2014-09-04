@@ -222,7 +222,7 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
   return aChan;
 }
 
-extern void dosHandleIO(int fd)
+void dosHandleIO(int fd)
 {
   int len;
   iec_data header;
