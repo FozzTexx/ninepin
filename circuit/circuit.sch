@@ -1025,11 +1025,11 @@ SDA
 Text Label 2150 6050 0    60   ~ 0
 SCL
 Text Label 2150 6150 0    60   ~ 0
-GP23_SER
+GP23_DATA
 Text Label 2150 6250 0    60   ~ 0
-GP22_SRCLK
+GP22_SHIFT
 Text Label 2150 6350 0    60   ~ 0
-GP24_RCLK
+GP24_STORE
 Text Label 2150 6450 0    60   ~ 0
 GP14_TX
 Text Label 2150 6550 0    60   ~ 0
@@ -1079,8 +1079,6 @@ Text Label 6650 6250 0    60   ~ 0
 IEC_SRQ
 Text Label 6650 6350 0    60   ~ 0
 IEC_RESET
-Text Notes 2400 6000 0    60   ~ 0
-FIXME - Make code use GPIO24 for RCLK/STCP instead of 21
 Connection ~ 3650 2450
 Connection ~ 4450 2450
 Connection ~ 3650 3150

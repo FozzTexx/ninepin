@@ -31,7 +31,7 @@
 #define ATARI_RIGHT	0x08
 #define ATARI_FIRE	0x10
 
-#define SREG_STORE	21
+#define SREG_STORE	24
 #define SREG_SHIFT	22
 #define SREG_DATA	23
 
