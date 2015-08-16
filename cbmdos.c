@@ -365,7 +365,7 @@ void dosHandleIO(int fd)
 	  wlen = write(fd, &aChan->cache[aChan->cpos], len);
 	  aChan->sent += wlen;
 	  aChan->cpos += wlen;
-	  fprintf(stderr, "\rSending %i bytes: %i%%", aChan->length,
+	  fprintf(stderr, "\rSending %u bytes: %u%%", aChan->length,
 		  (aChan->sent * 100) / aChan->length);
 	  if (wlen < len)
 	    break;

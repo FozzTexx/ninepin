@@ -183,26 +183,34 @@ void d64BufferFile(char *d64image, CBMDirectoryEntry *entry, char **buffer, size
 {
   char *data;
   CBMFileSector *sector;
-  size_t pos;
+  size_t len;
   int curTrack, curSect;
 
   
-  /* FIXME - don't trust sectorCount, loop through sectors building up file */
-  data = malloc(entry->sectorCount * 254);
+  /* Don't trust sectorCount, loop through sectors building up file */
   curTrack = entry->firstTrack;
   curSect = entry->firstSector;
-  pos = 0;
+  len = 0;
   do {
     sector = (CBMFileSector *) (d64image + d64TrackOffset[curTrack - 1] + curSect * 256);
-    memcpy(data + pos, sector->data, 254);
-    pos += 254;
+    len += 254;
     curTrack = sector->nextTrack;
     curSect = sector->nextSector;
   } while (curTrack);
 
-  *buffer = data;
-  *length = (entry->sectorCount - 1) * 254 + curSect;
-
+  *length = len;
+  *buffer = data = malloc(*length);
+  
+  curTrack = entry->firstTrack;
+  curSect = entry->firstSector;
+  do {
+    sector = (CBMFileSector *) (d64image + d64TrackOffset[curTrack - 1] + curSect * 256);
+    memcpy(data, sector->data, 254);
+    data += 254;
+    curTrack = sector->nextTrack;
+    curSect = sector->nextSector;
+  } while (curTrack);
+  
   return;
 }
 
@@ -235,7 +243,7 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
   CBMBAM *bam;
   CBMDOSChannel aChan;
   int curTrack, curSect;
-  int count, ft;
+  int count;
   CBMDirectoryEntry *entry;
 
 
@@ -254,7 +262,7 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
     if (filename[nw] != 0xa0)
       break;
   filename[nw+1] = 0;
-  fprintf(aChan.file, "\022\"%s%*s\" %c%c %02X", filename, 16 - strlen(filename), " ",
+  fprintf(aChan.file, "\022\"%s%*s\" %c%c 2%c", filename, 16 - strlen(filename), " ",
 	  bam->diskID[0], bam->diskID[1], bam->version);
   fputc(0x00, aChan.file);
 
@@ -264,8 +272,8 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
   do {
     entry = (CBMDirectoryEntry *) (data->image + d64TrackOffset[curTrack - 1] + curSect * 256);
     for (count = 0; count < 8; count++) {
-      ft = entry[count].filetype & 0x0f;
-      if (ft >= 1 && ft <= 4) {
+      if (entry[count].filetype >= 0x80 &&
+	  entry[count].filetype <= 0x84) {
 	strncpy(filename, entry[count].filename, 16);
 	for (nw = 15; nw >= 0; nw--)
 	  if (filename[nw] != 0xa0)
@@ -280,7 +288,7 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
 	nw = strlen(filename);
 	fprintf(aChan.file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
 		(int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
-		5 - bw, " ", filename, 16 - nw, " ", exten, bw + 6, " ", 0x00);
+		4 - bw, " ", filename, 17 - nw, " ", exten, bw + 6, " ", 0x00);
       }
     }
     curTrack = entry->track;
