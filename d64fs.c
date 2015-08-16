@@ -198,8 +198,8 @@ void d64BufferFile(char *d64image, CBMDirectoryEntry *entry, char **buffer, size
     curSect = sector->nextSector;
   } while (curTrack);
 
-  *length = len;
-  *buffer = data = malloc(*length);
+  *length = len - 254 + curSect - 1;
+  *buffer = data = malloc(len);
   
   curTrack = entry->firstTrack;
   curSect = entry->firstSector;
