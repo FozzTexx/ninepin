@@ -17,6 +17,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#include "cbmdos.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <wiringPi.h>
@@ -93,6 +94,7 @@ void joystickHandleIO(int fd)
   int deadzone = 16384;
   int output = 0;
   static int last = 0;
+  static int newDrive = 0;
 
 
   /* FIXME - check for read error, maybe user unplugged joystick */
@@ -104,7 +106,29 @@ void joystickHandleIO(int fd)
     break;
 	
   case JS_EVENT_BUTTON:
+    if (js.number == 8) { /* Select button */
+      if (js.value)
+	newDrive = -1;
+      else if (button[8]) { /* Ignore fake button up at startup */
+	if (newDrive < 0)
+	  newDrive = dosCurrentDrive() ^ 1;
+	dosSwapDrive(newDrive);
+      }
+    }
+
     button[js.number] = js.value;
+
+    if (button[8]) {
+      if (button[0])
+	newDrive = 0;
+      if (button[1])
+	newDrive = 1;
+      if (button[2])
+	newDrive = 2;
+      if (button[3])
+	newDrive = 3;
+    }
+    
     break;
   }
 

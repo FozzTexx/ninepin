@@ -175,6 +175,7 @@ CBMDOSChannel localGetDirectory(CBMDriveData *data, int driveNum)
 	  blocks = 65535;
 	for (bw = 1, nw = 9; blocks > nw; bw++, nw = nw * 10 + 9)
 	  ;
+	/* FIXME - make sure all files in directory have unique C64 name */
 	localFilenameToC64(dp->d_name, filename);
 	exten = strrchr(filename, '.');
 	nw = exten - filename;

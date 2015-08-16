@@ -75,7 +75,13 @@ static CBMDOSErrorString dosErrorStrings[] = {
 /* FIXME - don't use global variables */
 static int dosError = 0, dosTrackError = 0, dosSectorError = 0;
 static CBMDOSChannel dosChannels[16];
-static CBMDrive dosDrive = {{NULL, NULL}, NULL, NULL};
+static CBMDrive dosDrive[4] = {
+  {{NULL, NULL}, NULL, NULL},
+  {{NULL, NULL}, NULL, NULL},
+  {{NULL, NULL}, NULL, NULL},
+  {{NULL, NULL}, NULL, NULL},
+};
+static int curDrive = 0;
 
 int dosWildcardMatch(const char *pattern, const char *str)
 {
@@ -195,29 +201,29 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
   /* FIXME - map 16 char names to full names */
 
   if (special == '$')
-    aChan = dosDrive.listDirectory(&dosDrive.data, driveNum);
+    aChan = dosDrive[curDrive].listDirectory(&dosDrive[curDrive].data, driveNum);
   else if (special == '#') {
     if (!*fn) {
-      if (dosDrive.data.image)
-	free(dosDrive.data.image);
-      dosDrive.data.image = NULL;
-      dosDrive.opener = localOpenFile;
-      dosDrive.listDirectory = localGetDirectory;
+      if (dosDrive[curDrive].data.image)
+	free(dosDrive[curDrive].data.image);
+      dosDrive[curDrive].data.image = NULL;
+      dosDrive[curDrive].opener = localOpenFile;
+      dosDrive[curDrive].listDirectory = localGetDirectory;
     }
-    else if (d64MountDisk(&dosDrive.data, fn)) {
-      dosDrive.opener = d64OpenFile;
-      dosDrive.listDirectory = d64GetDirectory;
+    else if (d64MountDisk(&dosDrive[curDrive].data, fn)) {
+      dosDrive[curDrive].opener = d64OpenFile;
+      dosDrive[curDrive].listDirectory = d64GetDirectory;
     }
   }
   else if (special == '/') {
     /* FIXME - tell user it's an error to change dirs while d64 is
        mounted */
-    if (!dosDrive.data.image)
-      dosDrive.cd(&dosDrive.data, fn);
+    if (!dosDrive[curDrive].data.image)
+      dosDrive[curDrive].cd(&dosDrive[curDrive].data, fn);
     /* FIXME - check if cd was successful */
   }
   else
-    aChan = dosDrive.opener(&dosDrive.data, fn, mode);
+    aChan = dosDrive[curDrive].opener(&dosDrive[curDrive].data, fn, mode);
   
   return aChan;
 }
@@ -235,12 +241,12 @@ void dosHandleIO(int fd)
 
 
   /* FIXME - make a real init method */
-  if (!dosDrive.data.directory) {
-    dosDrive.data.directory = strdup(".");
-    dosDrive.data.image = NULL;
-    dosDrive.opener = localOpenFile;
-    dosDrive.listDirectory = localGetDirectory;
-    dosDrive.cd = localChangeDirectory;
+  if (!dosDrive[curDrive].data.directory) {
+    dosDrive[curDrive].data.directory = strdup(".");
+    dosDrive[curDrive].data.image = NULL;
+    dosDrive[curDrive].opener = localOpenFile;
+    dosDrive[curDrive].listDirectory = localGetDirectory;
+    dosDrive[curDrive].cd = localChangeDirectory;
   }
   
   len = read(fd, &header, sizeof(header));
@@ -380,3 +386,14 @@ void dosHandleIO(int fd)
   return;
 }
 
+void dosSwapDrive(int newDrive)
+{
+  curDrive = newDrive;
+  fprintf(stderr, "Swapping to drive %i\n", newDrive + 8);
+  return;
+}
+
+int dosCurrentDrive()
+{
+  return curDrive;
+}

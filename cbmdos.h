@@ -86,5 +86,7 @@ typedef enum {
 
 extern void dosHandleIO(int fd);
 extern int dosWildcardMatch(const char *pattern, const char *str);
+extern void dosSwapDrive(int newDrive);
+extern int dosCurrentDrive();
 
 #endif /* _CBMDOS_H */
