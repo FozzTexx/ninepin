@@ -127,6 +127,7 @@ CBMDOSChannel dosSendError()
   CBMDOSChannel aChan;
 
 
+  memset(&aChan, 0, sizeof(aChan));
   aChan.file = open_memstream(&aChan.buffer, &len);
   aChan.sent = 0;
   for (i = 0; dosErrorStrings[i].str && dosErrorStrings[i].err != dosError; i++)
@@ -149,11 +150,7 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
   char mode[10];
   
 
-  aChan.file = NULL;
-  aChan.buffer = NULL;
-  aChan.length = 0;
-  aChan.sent = 0;
-  aChan.cpos = aChan.clen = 0;
+  memset(&aChan, 0, sizeof(aChan));
   
   /* Prefix: $#/
      Drive number: decimal
