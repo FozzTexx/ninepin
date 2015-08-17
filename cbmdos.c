@@ -27,6 +27,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 typedef struct {
   CBMDOSError err;
@@ -202,19 +203,8 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
 
   if (special == '$')
     aChan = dosDrive[curDrive].listDirectory(&dosDrive[curDrive].data, driveNum);
-  else if (special == '#') {
-    if (!*fn) {
-      if (dosDrive[curDrive].data.image)
-	free(dosDrive[curDrive].data.image);
-      dosDrive[curDrive].data.image = NULL;
-      dosDrive[curDrive].opener = localOpenFile;
-      dosDrive[curDrive].listDirectory = localGetDirectory;
-    }
-    else if (d64MountDisk(&dosDrive[curDrive].data, fn)) {
-      dosDrive[curDrive].opener = d64OpenFile;
-      dosDrive[curDrive].listDirectory = d64GetDirectory;
-    }
-  }
+  else if (special == '#')
+    dosMountDisk(fn, curDrive);
   else if (special == '/') {
     /* FIXME - tell user it's an error to change dirs while d64 is
        mounted */
@@ -226,6 +216,59 @@ CBMDOSChannel dosOpenFile(const char *path, int channel)
     aChan = dosDrive[curDrive].opener(&dosDrive[curDrive].data, fn, mode);
   
   return aChan;
+}
+
+void dosPrintCommand(iec_data header)
+{
+  int cmd, dev, sub, chan;
+
+  
+  cmd = header.command & 0xe0;
+  dev = header.command & 0x1f;
+  sub = header.channel & 0xf0;
+  chan = header.channel & 0x0f;
+
+  fprintf(stderr, "Device:  %i:%i\n", dev, chan);
+  fprintf(stderr, "Command: ");
+  switch (cmd) {
+  case IECListenCommand:
+    fprintf(stderr, "Listen");
+    break;
+    
+  case IECTalkCommand:
+    fprintf(stderr, "Talk");
+    break;
+
+  default:
+    fprintf(stderr, "Unknown %02X", cmd);
+    break;
+  }
+
+  fprintf(stderr, "/");
+
+  switch (sub) {
+  case IECChannelCommand:
+    fprintf(stderr, "Channel");
+    break;
+    
+  case IECCloseCommand:
+    fprintf(stderr, "Close");
+    break;
+
+  case IECOpenCommand:
+    fprintf(stderr, "Open");
+    break;
+
+  default:
+    fprintf(stderr, "Unknown %02X", sub);
+    break;
+  }
+  fprintf(stderr, "\n");
+
+  fprintf(stderr, "Length:  %i\n", header.len);
+  fprintf(stderr, "EOI:     %s\n", header.eoi ? "Yes" : "No");
+
+  return;
 }
 
 void dosHandleIO(int fd)
@@ -240,15 +283,6 @@ void dosHandleIO(int fd)
   static unsigned char serial;
 
 
-  /* FIXME - make a real init method */
-  if (!dosDrive[curDrive].data.directory) {
-    dosDrive[curDrive].data.directory = strdup(".");
-    dosDrive[curDrive].data.image = NULL;
-    dosDrive[curDrive].opener = localOpenFile;
-    dosDrive[curDrive].listDirectory = localGetDirectory;
-    dosDrive[curDrive].cd = localChangeDirectory;
-  }
-  
   len = read(fd, &header, sizeof(header));
   if (dlen < header.len + 1) {
     dlen = header.len + 1;
@@ -267,14 +301,8 @@ void dosHandleIO(int fd)
   chan = header.channel & 0x0f;
   serial = header.serial;
   aChan = &dosChannels[chan];
-  {
-    int i;
-    unsigned char *p = (unsigned char *) &header;
-    fprintf(stderr, "Command:");
-    for (i = 0; i < sizeof(header); i++)
-      fprintf(stderr, " %02x", p[i]);
-    fprintf(stderr, "\n");
-  }
+
+  dosPrintCommand(header);
 
   switch (cmd) {
   case IECListenCommand:
@@ -322,6 +350,17 @@ void dosHandleIO(int fd)
       /* Save data */
       if (aChan->file)
 	fwrite(data, header.len, 1, aChan->file);
+      else {
+	int i;	
+	fprintf(stderr, "Trying to write to read-only filesystem\n");
+	for (i = 0; i < header.len; i++)
+	  fprintf(stderr, " %02x", data[i]);
+	fprintf(stderr, "\n");
+      }
+      break;
+
+    default:
+      fprintf(stderr, "Unimplemented subcommand %02x\n", sub);
       break;
     }
     break;
@@ -396,4 +435,55 @@ void dosSwapDrive(int newDrive)
 int dosCurrentDrive()
 {
   return curDrive;
+}
+
+void dosMountDisk(const char *filename, int drive)
+{
+  struct stat st;
+  char *fullpath;
+
+
+  if (!filename || !*filename) {
+    if (dosDrive[drive].data.image)
+      free(dosDrive[drive].data.image);
+    dosDrive[drive].data.image = NULL;
+    dosDrive[drive].opener = localOpenFile;
+    dosDrive[drive].listDirectory = localGetDirectory;
+  }
+  else {
+    fullpath = localFindPath(dosDrive[drive].data.directory, filename);
+    if (stat(fullpath, &st) == 0) {
+      if (S_ISREG(st.st_mode)) {
+	if (d64MountDisk(&dosDrive[drive].data, fullpath)) {
+	  dosDrive[drive].opener = d64OpenFile;
+	  dosDrive[drive].listDirectory = d64GetDirectory;
+	}
+      }
+      else if (S_ISDIR(st.st_mode)) {
+	/* FIXME - tell user it's an error to change dirs while d64 is
+	   mounted */
+	if (!dosDrive[drive].data.image)
+	  dosDrive[drive].cd(&dosDrive[drive].data, filename);
+      }
+    }
+    free(fullpath);
+  }
+
+  return;
+}
+
+void dosInitDrives()
+{
+  int drive;
+
+
+  for (drive = 0; drive < 4; drive++) {
+    dosDrive[drive].data.directory = strdup(".");
+    dosDrive[drive].data.image = NULL;
+    dosDrive[drive].opener = localOpenFile;
+    dosDrive[drive].listDirectory = localGetDirectory;
+    dosDrive[drive].cd = localChangeDirectory;
+  }
+  
+  return;
 }

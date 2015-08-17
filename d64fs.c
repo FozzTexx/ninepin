@@ -79,17 +79,23 @@ static int d64TrackOffset[] = {
   0x27800, 0x28900, 0x29A00, 0x2AB00, 0x2BC00, 0x2CD00, 0x2DE00, 0x2EF00
 };
 
-int d64MountDisk(CBMDriveData *data, const char *path)
+int d64MountDisk(CBMDriveData *data, const char *filename)
 {
   FILE *file;
   int len;
   char *d64image = NULL;
+  char *altname;
 
 
-  /* FIXME - check for .d64 extension in path */
-  /* FIXME - allow user to specify full path */
-  
-  if ((file = localFindFile(data->directory, path, "r"))) {
+  if (!(file = fopen(filename, "r")) &&
+      strlen(filename) > 4 && !strcasecmp(&filename[strlen(filename) - 4], ".d64")) {
+    altname = alloca(strlen(filename) + 5);
+    strcpy(altname, filename);
+    strcat(altname, ".d64");
+    file = fopen(altname, "r");
+  }
+    
+  if (file) {
     fseek(file, 0, SEEK_END);
     len = ftell(file);
     rewind(file);

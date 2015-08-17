@@ -26,30 +26,84 @@
 #include <stdlib.h>
 #include <sys/param.h>
 
-FILE *localFindFile(const char *directory, const char *path, const char *mode)
+char *localFindPath(const char *directory, const char *path)
 {
+  char *userPath;
+  char newdir[MAXPATHLEN];
+  int len;
   DIR *dir;
   struct dirent *dp;
+  char *sep;
+
+
+  if (!*path)
+    return NULL;
+
+  /* FIXME - check for ~ or whatever C64 can type */
+  if (*path == '/') {
+    strcpy(newdir, "/");
+    while (*path && *path == '/')
+      path++;
+  }
+  else if (directory)
+    strcpy(newdir, directory);
+  else
+    strcpy(newdir, ".");
+
+  len = strlen(path);
+  while (len && path[len-1] == '/')
+    len--;
+  
+  if (len) {
+    userPath = alloca(len+1);
+    strncpy(userPath, path, len);
+    userPath[len] = 0;
+    sep = userPath;
+
+    while (*userPath) {
+      if (!(sep = strchr(sep, '/')))
+	sep = userPath + strlen(userPath);
+      else {
+	*sep = 0;
+	sep++;
+      }
+
+      if (!(dir = opendir(newdir)))
+	return NULL;
+
+      for (dp = readdir(dir); dp; dp = readdir(dir))
+	if ((!*sep || dp->d_type == DT_DIR) && dosWildcardMatch(userPath, dp->d_name)) {
+	  if (newdir[strlen(newdir)-1] != '/')
+	    strcat(newdir, "/");
+	  strcat(newdir, dp->d_name);
+	  break;
+	}
+
+      closedir(dir);
+      if (!dp) {
+	fprintf(stderr, "Failed to find %s\n", userPath);
+	return NULL;
+      }
+      userPath = sep;
+    }
+  }
+
+  fprintf(stderr, "Found \"%s\"\n", newdir);
+
+  return strdup(newdir);
+}
+
+FILE *localFindFile(const char *directory, const char *path, const char *mode)
+{
   FILE *file = NULL;
   char *fullpath;
 
 
-  if (!(dir = opendir(directory)))
-    return NULL;
+  if ((fullpath = localFindPath(directory, path))) {
+    file = fopen(fullpath, mode);
+    free(fullpath);
+  }
 
-  for (dp = readdir(dir); dp; dp = readdir(dir))
-    if (dp->d_type == DT_REG && dosWildcardMatch(path, dp->d_name)) {
-      fullpath = alloca(strlen(directory) + strlen(dp->d_name) + 2);
-      strcpy(fullpath, directory);
-      if (fullpath[strlen(fullpath)-1] != '/')
-	strcat(fullpath, "/");
-      strcat(fullpath, dp->d_name);
-      file = fopen(fullpath, mode);
-      fprintf(stderr, "Found \"%s\"\n", fullpath);
-      break;
-    }
-
-  closedir(dir);
   return file;
 }
 

@@ -88,5 +88,7 @@ extern void dosHandleIO(int fd);
 extern int dosWildcardMatch(const char *pattern, const char *str);
 extern void dosSwapDrive(int newDrive);
 extern int dosCurrentDrive();
+extern void dosMountDisk(const char *filename, int drive);
+void dosInitDrives();
 
 #endif /* _CBMDOS_H */
