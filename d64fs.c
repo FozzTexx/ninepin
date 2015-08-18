@@ -244,7 +244,7 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
   size_t len;
   char filename[64];
   off_t blocks;
-  int bw, nw;
+  int bw, nw, qc;
   const char *exten;
   CBMBAM *bam;
   CBMDOSChannel aChan;
@@ -268,8 +268,16 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
     if (filename[nw] != 0xa0)
       break;
   filename[nw+1] = 0;
-  fprintf(aChan.file, "\022\"%s%*s\" %c%c 2%c", filename, 16 - strlen(filename), " ",
-	  bam->diskID[0], bam->diskID[1], bam->version);
+  strcat(filename, "                ");
+  filename[16] = 0;
+  exten = "FZ";
+  if (bam->version == 0x41)
+    exten = "2A";
+  else if (bam->version == 0x50)
+    exten = "2P";
+  else if (bam->version == 0x00)
+    exten = ".C";
+  fprintf(aChan.file, "\022\"%s\" %c%c %s", filename, bam->diskID[0], bam->diskID[1], exten);
   fputc(0x00, aChan.file);
 
   curTrack = 18;
@@ -278,13 +286,24 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
   do {
     entry = (CBMDirectoryEntry *) (data->image + d64TrackOffset[curTrack - 1] + curSect * 256);
     for (count = 0; count < 8; count++) {
-      if (entry[count].filetype >= 0x80 &&
-	  entry[count].filetype <= 0x84) {
+      if (entry[count].filetype &&
+	  (entry[count].filetype & 0x0f) >= 0 &&
+	  (entry[count].filetype & 0x0f) <= 4) {
 	strncpy(filename, entry[count].filename, 16);
-	for (nw = 15; nw >= 0; nw--)
+	for (nw = 16; nw >= 0; nw--)
 	  if (filename[nw] != 0xa0)
 	    break;
 	filename[nw+1] = 0;
+	for (nw = 0, qc = '"'; filename[nw]; nw++)
+	  if (filename[nw] == 0xa0 || filename[nw] == '"') {
+	    filename[nw] = qc;
+	    if (!qc)
+	      break;
+	    qc = 0;
+	  }
+	if (qc)
+	  strcat(filename, "\"");
+	filename[17] = 0;
 
 	fwrite("\001\001", 2, 1, aChan.file);
 	blocks = entry[count].sectorCount;
@@ -292,17 +311,20 @@ CBMDOSChannel d64GetDirectory(CBMDriveData *data, int driveNum)
 	  ;
 	exten = d64Extension(entry[count].filetype);
 	nw = strlen(filename);
-	fprintf(aChan.file, "%c%c%*s\"%.16s\"%*s%s%*s%c",
+	fprintf(aChan.file, "%c%c%*s\"%s%*s%s%c",
 		(int) blocks & 0xff, (int) (blocks >> 8) & 0xff,
-		4 - bw, " ", filename, 17 - nw, " ", exten, bw + 6, " ", 0x00);
+		4 - bw, " ", filename, 18 - nw, " ", exten, 0x00);
       }
     }
     curTrack = entry->track;
     curSect = entry->sector;
   } while (curTrack);
 
-  for (count = blocks = 0; count < 35; count++)
+  for (count = blocks = 0; count < 35; count++) {
+    if (count == 17)
+      continue;
     blocks += bam->entries[count].freeCount;
+  }
   
   fprintf(aChan.file, "\001\001%c%cBLOCKS FREE.              %c%c%c",
 	  (int) blocks & 0xff, (int) (blocks >> 8) & 0xff, 0x00, 0x00, 0x00);
