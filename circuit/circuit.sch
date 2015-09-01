@@ -1038,8 +1038,8 @@ Text Label 1650 6550 2    60   ~ 0
 GP17_Atari
 Wire Notes Line
 	3200 1600 3200 5500
-Text Notes 5300 1500 2    118  ~ 0
-IEC Interface Level Shifting
+Text Notes 4850 1500 2    118  ~ 0
+IEC Level Shifting
 Wire Notes Line
 	16400 1550 16400 8900
 Wire Notes Line
@@ -1379,4 +1379,46 @@ Connection ~ 9900 10050
 Wire Wire Line
 	10350 10050 10350 10200
 Connection ~ 10150 10050
+$Comp
+L CONN_01X04 P?
+U 1 1 54741172
+P 1200 1150
+F 0 "P?" H 1200 1400 50  0000 C CNN
+F 1 "CONN_01X04" V 1300 1150 50  0000 C CNN
+F 2 "" H 1200 1150 60  0000 C CNN
+F 3 "" H 1200 1150 60  0000 C CNN
+	1    1200 1150
+	1    0    0    -1  
+$EndComp
+$Comp
+L +5V #PWR?
+U 1 1 547412EB
+P 850 1000
+F 0 "#PWR?" H 850 1090 20  0001 C CNN
+F 1 "+5V" H 850 1090 30  0000 C CNN
+F 2 "" H 850 1000 60  0000 C CNN
+F 3 "" H 850 1000 60  0000 C CNN
+	1    850  1000
+	1    0    0    -1  
+$EndComp
+$Comp
+L GND #PWR?
+U 1 1 547412FF
+P 850 1400
+F 0 "#PWR?" H 850 1400 30  0001 C CNN
+F 1 "GND" H 850 1330 30  0001 C CNN
+F 2 "" H 850 1400 60  0000 C CNN
+F 3 "" H 850 1400 60  0000 C CNN
+	1    850  1400
+	1    0    0    -1  
+$EndComp
+Wire Wire Line
+	1000 1000 850  1000
+Wire Wire Line
+	1000 1100 850  1100
+Wire Wire Line
+	850  1100 850  1400
+Wire Wire Line
+	1000 1200 850  1200
+Connection ~ 850  1200
 $EndSCHEMATC
