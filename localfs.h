@@ -22,6 +22,7 @@
 
 #include "cbmdos.h"
 
+extern char *localFindPath(const char *directory, const char *path);
 extern FILE *localFindFile(const char *directory, const char *path, const char *mode);
 extern CBMDOSChannel localOpenFile(CBMDriveData *data, const char *path, const char *mode);
 extern CBMDOSChannel localGetDirectory(CBMDriveData *data, int driveNum);

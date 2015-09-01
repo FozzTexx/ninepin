@@ -59,6 +59,24 @@ types. Directories can be changed from the C64 side. It is also
 possible mount and unmount .d64 images from the C64. There is no
 emulation of a real 1541 so fastloaders will not work.
 
+To change directories:
+
+  LOAD "/newpath",8
+
+The leading slash will be ignored. The C64 will print an error but as
+long as the directory exists the change directory will be successful.
+
+To mount a .d64 disk image:
+
+  LOAD "#filename.d64",8
+
+The C64 will print an error but filename.d64 will be mounted
+read only.
+
+To unmount a .d64 disk image and use the native directory:
+
+  LOAD "#",8
+
 ----------------------------------------
 
 Future plans include adding more CBM DOS capabilities. I also want to

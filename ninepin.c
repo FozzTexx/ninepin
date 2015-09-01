@@ -30,9 +30,13 @@ int main(int argc, char *argv[])
 {
   int dosfd, joyfd;
   fd_set rd, ex;
+  int count;
 
   
-  /* FIXME - read CLI arguments */
+  dosInitDrives();
+  
+  for (count = 1; count < argc && count < 5; count++)
+    dosMountDisk(argv[count], count - 1);
 
   if (!geteuid())
     joyfd = initJoystick();

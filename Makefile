@@ -9,7 +9,7 @@ BIN_DIR=.
 .SUFFIXES: .m .h,v .c,v .m,v .js .jh
 
 RC_HOSTTYPE= `arch`-`uname`
-LIBS=	-L$(HOME)/Unix/$(OSTYPE)/lib -lobjc -lpthread -ldl
+LIBS=	-L$(HOME)/Unix/$(OSTYPE)/lib -lpthread -ldl
 
 OFILES=$(CFILES:.c=.o) $(MFILES:.m=.o) $(FFILES:.f=.o) $(CLASSES:.m=.o) $(CPPFILES:.cpp=.o)
 PRODUCT_DEPENDS= $(OFILES) $(OTHER_OFILES) $(HFILES) $(LIBPATHS)
