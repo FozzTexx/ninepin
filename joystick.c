@@ -17,6 +17,7 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#include "joystick.h"
 #include "cbmdos.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,25 +26,50 @@
 #include <linux/joystick.h>
 #include <fcntl.h>
 #include <unistd.h>
-
-#define ATARI_UP	0x01
-#define ATARI_DOWN	0x02
-#define ATARI_LEFT	0x04
-#define ATARI_RIGHT	0x08
-#define ATARI_FIRE	0x10
+#include <string.h>
 
 #define SREG_STORE	24
-#define SREG_SHIFT	22
-#define SREG_DATA	23
+#define SREG_SHIFT	23
+#define SREG_DATA	22
+
+#define MODE_ABSOLUTE	0
+#define MODE_ACCEL	1
+
+#define BUTTON_FIRETP	0
+#define BUTTON_FIRERT	1
+#define BUTTON_FIREBT	2
+#define BUTTON_FIRELF	3
+#define BUTTON_LSHTOP	6
+#define BUTTON_LSHBOT	4
+#define BUTTON_RSHTOP	7
+#define BUTTON_RSHBOT	5
+#define BUTTON_START	9
+#define BUTTON_SELECT	8
+#define BUTTON_LSTICK	10
+#define BUTTON_RSTICK	11
+
+#define calcAccel(x) ({int _x = x; _x / (160 / (1 + abs(_x) / 16384));})
 
 static int numAxes = 0, numButtons = 0;
 static int *axis, *button;
+
+int potx, poty;
+//int xmax = 135, ymax = 160;
+//int xmax = 165, ymax = 180;
+int xmax = 255, ymax = 255;
+int joy_state = 0;
+int joy_mode = 0;
+int yaxis = 1;
+int wrap_x = 0, wrap_y = 0;
 
 void joystickWriteBits(int output)
 {
   int i, bit;
 
 
+  printf("Output: 0x%02x\r", output);
+  fflush(stdout);
+  
   /* Write the high bits first */
   for (i = 0; i < 16; i++) {
     bit = (output & 0x8000) >> 15;
@@ -55,6 +81,7 @@ void joystickWriteBits(int output)
 
   digitalWrite(SREG_STORE, 1);
   digitalWrite(SREG_STORE, 0);
+
   return;
 }
 
@@ -85,6 +112,15 @@ int initJoystick()
   axis = calloc(numAxes, sizeof(int));
   button = calloc(numButtons, sizeof(int));
 
+  /* modprobe ad525x_dpot  */
+  /* echo ad5282 0x2c > /sys/bus/i2c/devices/i2c-1/new_device */
+  if ((potx = open("/sys/bus/i2c/devices/1-002c/rdac0", O_RDWR)) >= 0) {
+    if ((poty = open("/sys/bus/i2c/devices/1-002c/rdac1", O_RDWR)) < 0) {
+      close(potx);
+      potx = -1;
+    }
+  }
+  
   return joyfd;
 }
 
@@ -93,7 +129,6 @@ void joystickHandleIO(int fd)
   struct js_event js;
   int deadzone = 16384;
   int output = 0;
-  static int last = 0;
   static int newDrive = 0;
 
 
@@ -103,6 +138,7 @@ void joystickHandleIO(int fd)
   switch (js.type & ~JS_EVENT_INIT) {
   case JS_EVENT_AXIS:
     axis[js.number] = js.value;
+    //fprintf(stderr, "Axis %i: %i\n", js.number, js.value);
     break;
 	
   case JS_EVENT_BUTTON:
@@ -143,13 +179,130 @@ void joystickHandleIO(int fd)
   output &= ~ATARI_RIGHT;
   output |= (axis[4] > deadzone) * ATARI_RIGHT;
   output &= ~ATARI_FIRE;
-  output |= button[0] * ATARI_FIRE;
 
-  if (output != last) {
+  output |= button[BUTTON_FIRETP] * ATARI_FIRE;
+  output |= button[BUTTON_FIREBT] * ATARI_FIRE;
+  output |= button[BUTTON_FIRERT] * APPLE_FIRE1;
+  output |= button[BUTTON_FIRELF] * APPLE_FIRE1;
+
+  if (button[BUTTON_RSHTOP]) {
+    if (button[BUTTON_LSHBOT])
+      xmax -= 10;
+    if (button[BUTTON_RSHBOT])
+      xmax += 10;
+    if (xmax < 0)
+      xmax = 0;
+    if (xmax > 255)
+      xmax = 255;
+  }
+  if (button[BUTTON_LSHTOP]) {
+    if (button[BUTTON_LSHBOT])
+      ymax -= 10;
+    if (button[BUTTON_RSHBOT])
+      ymax += 10;
+    if (ymax < 0)
+      ymax = 0;
+    if (ymax > 255)
+      ymax = 255;
+  }
+
+  if (button[BUTTON_LSTICK]) {
+    if (button[BUTTON_SELECT])
+      wrap_x = !wrap_x;
+    else
+      joy_mode = !joy_mode; /* Toggle between absolute or relative */
+  }
+  if (button[BUTTON_RSTICK]) {
+    if (button[BUTTON_SELECT])
+      wrap_y = !wrap_y;
+    else
+      yaxis ^= 2; /* Toggle between axis 1 and 3 */
+  }
+  
+  if (output != joy_state) {
     joystickWriteBits(output);
-    printf("Output: 0x%02x\r", output);
-    fflush(stdout);
-    last = output;
+    joy_state = output;
+  }
+
+  return;
+}
+
+void updatePaddles()
+{
+  int xval, yval;
+  char buf[20];
+  static int xpos = 0, ypos = 0;
+  static int x_accel = 0, y_accel = 0;
+
+    
+  if (joy_mode == MODE_ACCEL) {
+    x_accel = calcAccel(axis[0]);
+    y_accel = calcAccel(axis[yaxis]);
+
+    xpos += x_accel;
+    if (xpos < -32768) {
+      if (!wrap_x)
+	xpos = -32768;
+      else
+	xpos += 65536;
+    }
+    if (xpos > 32767) {
+      if (!wrap_x)
+	xpos = 32767;
+      else
+	xpos -= 65536;
+    }
+
+    ypos += y_accel;
+    if (ypos < -32768) {
+      if (!wrap_y)
+	ypos = -32768;
+      else
+	ypos += 65536;
+    }
+    if (ypos > 32767) {
+      if (!wrap_y)
+	ypos = 32767;
+      else
+	ypos -= 65536;
+    }
+  }
+  else {
+    xpos = axis[0];
+    ypos = axis[yaxis];
+  }
+  
+  xval = (xpos + 32768) * xmax / 65535;
+  yval = (ypos + 32768) * ymax / 65535;
+
+  fprintf(stderr, "XPos: %i = %i  YPos: %i = %i  Buttons: %02x       \r",
+	  xpos, xval, ypos, yval, joy_state);
+  //printf("Pos: %i  Accel: %i\n", xpos, x_accel);
+
+  sprintf(buf, "%i\n", xval);
+  write(potx, buf, strlen(buf));
+  sprintf(buf, "%i\n", yval);
+  write(poty, buf, strlen(buf));
+}
+
+void calibrateJoystick()
+{
+  int xval, yval;
+  char buf[20];
+  int rval[256];
+
+
+  memset(rval, 0xff, sizeof(rval));
+  
+  for (xval = 240; xval >= 0; xval -= 5) {
+    fprintf(stderr, "Val: %i  \n", xval);
+    sprintf(buf, "%i\n", xval);
+    write(potx, buf, strlen(buf));
+    fgets(buf, sizeof(buf), stdin);
+    if (buf[0] == 'u')
+      xval += 6;
+    else
+      rval[xval] = atoi(buf);
   }
 
   return;

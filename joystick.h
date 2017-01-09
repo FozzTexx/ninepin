@@ -17,5 +17,20 @@
  * <http://www.gnu.org/licenses/>.
  */
 
+#define ATARI_FIRE	0x01
+#define ATARI_LEFT	0x02
+#define ATARI_RIGHT	0x04
+#define ATARI_UP	0x08
+#define ATARI_DOWN	0x10
+
+#define APPLE_FIRE0	ATARI_FIRE
+#define APPLE_FIRE1	ATARI_LEFT
+
 extern int initJoystick();
 extern void joystickHandleIO(int fd);
+
+extern int potx, poty, xmax, ymax, joy_state;
+extern void joystickWriteBits(int output);
+extern void updatePaddles();
+
+extern void calibrateJoystick();
