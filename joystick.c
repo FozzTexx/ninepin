@@ -54,9 +54,10 @@ static int numAxes = 0, numButtons = 0;
 static int *axis, *button;
 
 int potx, poty;
-//int xmax = 135, ymax = 160;
+// Apple II:
+int xmax = 135, ymax = 160;
 //int xmax = 165, ymax = 180;
-int xmax = 255, ymax = 255;
+//int xmax = 255, ymax = 255;
 int joy_state = 0;
 int joy_mode = 0;
 int yaxis = 1;
@@ -224,6 +225,8 @@ void joystickHandleIO(int fd)
     joy_state = output;
   }
 
+  updatePaddles();
+  
   return;
 }
 
