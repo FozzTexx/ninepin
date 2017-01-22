@@ -293,8 +293,6 @@ void joystickHandleIO(int fd)
     joy_state = output;
   }
 
-  updatePaddles();
-  
   return;
 }
 
