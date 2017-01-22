@@ -27,13 +27,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <math.h>
 
 #define SREG_STORE	24
 #define SREG_SHIFT	23
 #define SREG_DATA	22
-
-#define MODE_ABSOLUTE	0
-#define MODE_ACCEL	1
 
 #define BUTTON_FIRETP	0
 #define BUTTON_FIRERT	1
@@ -48,10 +46,24 @@
 #define BUTTON_LSTICK	10
 #define BUTTON_RSTICK	11
 
+#define DEADZONE	16384
+
 #define calcAccel(x) ({int _x = x; _x / (160 / (1 + abs(_x) / 16384));})
 
 static int numAxes = 0, numButtons = 0;
 static int *axis, *button;
+
+typedef enum {
+  modeAbsolute = 0,
+  modeRelative,
+  mode4way,
+  modeMax
+} joyMode;
+
+typedef enum {
+  outputDigital = 0,
+  outputAnalog = 1
+} outputMode;
 
 int potx, poty;
 // Apple II:
@@ -59,7 +71,8 @@ int xmax = 135, ymax = 160;
 //int xmax = 165, ymax = 180;
 //int xmax = 255, ymax = 255;
 int joy_state = 0;
-int joy_mode = 0;
+joyMode joy_mode = modeAbsolute;
+outputMode out_mode = outputAnalog;
 int yaxis = 1;
 int wrap_x = 0, wrap_y = 0;
 
@@ -125,12 +138,59 @@ int initJoystick()
   return joyfd;
 }
 
+void calc4way(int xaxis, int yaxis, int *xpos, int *ypos)
+{
+  double x, y, angle;
+
+
+  x = xaxis;
+  y = yaxis;
+  if (x < -DEADZONE || x > DEADZONE) {
+    angle = atan(fabs(y) / fabs(x));
+    angle *= 180 / M_PI;
+    if (x < 0) {
+      angle = 90 - angle + 90;
+      if (y > 0)
+	angle = 180 - angle + 180;
+    }
+    else if (y > 0)
+      angle = 360 - angle;
+    //fprintf(stderr, "\n%f %f %f\n", angle, x, y);
+    if (angle < 45 || angle > (45 * 7)) {
+      *xpos = 32767;
+      *ypos = 0;
+    }
+    else if (angle > 45 && angle < (45 * 3)) {
+      *xpos = 0;
+      *ypos = -32767;
+    }
+    else if (angle > (45 * 3) && angle < (45 * 5)) {
+      *xpos = -32767;
+      *ypos = 0;
+    }
+    else if (angle > (45 * 5) && angle < (45 * 7)) {
+      *xpos = 0;
+      *ypos = 32767;
+    }
+  }
+  else if (y < -DEADZONE || y > DEADZONE) {
+    *xpos = 0;
+    *ypos = ((y > 0) - (y < 0)) * 32767;
+  }
+  else {
+    *xpos = 0;
+    *ypos = 0;
+  }
+
+  return;
+}    
+
 void joystickHandleIO(int fd)
 {
   struct js_event js;
-  int deadzone = 16384;
   int output = 0;
   static int newDrive = 0;
+  int xpos, ypos;
 
 
   /* FIXME - check for read error, maybe user unplugged joystick */
@@ -169,17 +229,23 @@ void joystickHandleIO(int fd)
     break;
   }
 
-  /* Dpad shows up as axes 4&5 */
+  if (out_mode == outputDigital) {
+    /* MadCatz Dpad shows up as axes 4&5 when in analog mode */
+    xpos = axis[0];
+    ypos = axis[yaxis];
+    if (joy_mode == mode4way)
+      calc4way(xpos, ypos, &xpos, &ypos);
 
-  output &= ~ATARI_UP;
-  output |= (axis[5] < -deadzone) * ATARI_UP;
-  output &= ~ATARI_DOWN;
-  output |= (axis[5] > deadzone) * ATARI_DOWN;
-  output &= ~ATARI_LEFT;
-  output |= (axis[4] < -deadzone) * ATARI_LEFT;
-  output &= ~ATARI_RIGHT;
-  output |= (axis[4] > deadzone) * ATARI_RIGHT;
-  output &= ~ATARI_FIRE;
+    output &= ~ATARI_UP;
+    output |= (ypos < -DEADZONE) * ATARI_UP;
+    output &= ~ATARI_DOWN;
+    output |= (ypos > DEADZONE) * ATARI_DOWN;
+    output &= ~ATARI_LEFT;
+    output |= (xpos < -DEADZONE) * ATARI_LEFT;
+    output &= ~ATARI_RIGHT;
+    output |= (xpos > DEADZONE) * ATARI_RIGHT;
+    output &= ~ATARI_FIRE;
+  }
 
   output |= button[BUTTON_FIRETP] * ATARI_FIRE;
   output |= button[BUTTON_FIREBT] * ATARI_FIRE;
@@ -210,8 +276,10 @@ void joystickHandleIO(int fd)
   if (button[BUTTON_LSTICK]) {
     if (button[BUTTON_SELECT])
       wrap_x = !wrap_x;
-    else
-      joy_mode = !joy_mode; /* Toggle between absolute or relative */
+    else {
+      joy_mode = (joy_mode + 1) % modeMax; /* Cycle joy mode */
+      fprintf(stderr, "\nJoy mode: %i\n", joy_mode);
+    }
   }
   if (button[BUTTON_RSTICK]) {
     if (button[BUTTON_SELECT])
@@ -237,8 +305,9 @@ void updatePaddles()
   static int xpos = 0, ypos = 0;
   static int x_accel = 0, y_accel = 0;
 
-    
-  if (joy_mode == MODE_ACCEL) {
+
+  switch (joy_mode) {
+  case modeRelative:
     x_accel = calcAccel(axis[0]);
     y_accel = calcAccel(axis[yaxis]);
 
@@ -269,10 +338,16 @@ void updatePaddles()
       else
 	ypos -= 65536;
     }
-  }
-  else {
+    break;
+
+  case mode4way:
+    calc4way(axis[0], axis[yaxis], &xpos, &ypos);
+    break;
+
+  default:
     xpos = axis[0];
     ypos = axis[yaxis];
+    break;
   }
   
   xval = (xpos + 32768) * xmax / 65535;

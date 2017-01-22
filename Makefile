@@ -2,7 +2,7 @@ PRODUCT= ninepin
 CFILES= $(PRODUCT).c cbmdos.c joystick.c d64fs.c localfs.c
 OTHER_CFLAGS=
 CFLAGS= -g -Wall -I$(HOME)/Unix/$(OSTYPE)/include -dD
-OTHER_LIBS=-lwiringPi -lrt
+OTHER_LIBS=-lwiringPi -lrt -lm
 
 BIN_DIR=.
 
