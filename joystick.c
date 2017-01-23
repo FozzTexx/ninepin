@@ -148,12 +148,9 @@ void calc4way(int xaxis, int yaxis, int *xpos, int *ypos)
   if (x < -DEADZONE || x > DEADZONE) {
     angle = atan(fabs(y) / fabs(x));
     angle *= 180 / M_PI;
-    if (x < 0) {
-      angle = 90 - angle + 90;
-      if (y > 0)
-	angle = 180 - angle + 180;
-    }
-    else if (y > 0)
+    if (x < 0)
+      angle = 180 - angle;
+    if (y > 0)
       angle = 360 - angle;
     //fprintf(stderr, "\n%f %f %f\n", angle, x, y);
     if (angle < 45 || angle > (45 * 7)) {
@@ -252,6 +249,8 @@ void joystickHandleIO(int fd)
   output |= button[BUTTON_FIRERT] * APPLE_FIRE1;
   output |= button[BUTTON_FIRELF] * APPLE_FIRE1;
 
+  /* FIXME - debounce buttons/wait for up event */
+  
   if (button[BUTTON_RSHTOP]) {
     if (button[BUTTON_LSHBOT])
       xmax -= 10;
