@@ -162,10 +162,10 @@ CBMDirectoryEntry *d64FindFile(char *d64image, const char *path)
       ft = entry[count].filetype & 0x0f;
       if (ft >= 1 && ft <= 4) {
 	strncpy(filename, entry[count].filename, 16);
-	for (i = 15; i >= 0; i--)
-	  if (filename[i] != 0xa0)
+	for (i = 0; i < 16; i++)
+	  if (filename[i] == 0xa0)
 	    break;
-	filename[i+1] = 0;
+	filename[i] = 0;
 
 	/* Add .PRG to filename since dosOpenFile will automatically append it */
 	if (ft == 0x02)

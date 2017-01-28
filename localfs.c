@@ -198,12 +198,8 @@ CBMDOSChannel localGetDirectory(CBMDriveData *data, int driveNum)
   char *exten;
   CBMDOSChannel aChan;
 
-  
-  aChan.file = NULL;
-  aChan.buffer = NULL;
-  aChan.length = 0;
-  aChan.sent = 0;
-  aChan.cpos = aChan.clen = 0;
+
+  memset(&aChan, 0, sizeof(aChan));
 
   if ((dir = opendir(data->directory))) {
     aChan.file = open_memstream(&aChan.buffer, &len);
