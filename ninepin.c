@@ -31,6 +31,7 @@ int main(int argc, char *argv[])
   int dosfd, joyfd;
   fd_set rd, ex;
   int count;
+  struct timeval timeout;
 
   
   dosInitDrives();
@@ -56,13 +57,18 @@ int main(int argc, char *argv[])
     if (dosfd >= 0)
       FD_SET(dosfd, &rd);
     ex = rd;
-    select(NOFILE, &rd, NULL, &ex, NULL);
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 10000;
+    select(NOFILE, &rd, NULL, &ex, &timeout);
 
     if (FD_ISSET(joyfd, &rd))
       joystickHandleIO(joyfd);
     if (FD_ISSET(dosfd, &rd))
       dosHandleIO(dosfd);
 
+    /* FIXME - only update at regular intervals when in relative/acceleration mode */
+    updatePaddles();
+    
     if (FD_ISSET(joyfd, &ex)) {
       fprintf(stderr, "Error with joystick\n");
       close(joyfd);

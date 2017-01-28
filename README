@@ -56,7 +56,7 @@ shifters such as a 74HCT245 and CD4050.
 The disk drive emulation works with directories and .d64 images. Files
 in regular directories are automatically mapped to C64 file
 types. Directories can be changed from the C64 side. It is also
-possible mount and unmount .d64 images from the C64. There is no
+possible to mount and unmount .d64 images from the C64. There is no
 emulation of a real 1541 so fastloaders will not work.
 
 To change directories:
@@ -83,10 +83,8 @@ Future plans include adding more CBM DOS capabilities. I also want to
 add supporting two joysticks and the ability to use the extra buttons
 on a USB gamepad for changing settings. Support for analog controls is
 also planned, but I want to support several different platforms which
-used varying pot sizes (1Meg on the 2600, 500k on the C64, and 150k on
-the Apple II) and I'm not sure what to use for D2A. A 16bit R2R
-resistor ladder would work, but I don't really want to make 4 of them
-by hand!
+used varying pot sizes (1Meg on the 2600, 500k on the C64, 150k on the
+Apple II, and 100k on the IBM PC).
 
 Another joystick feature that is missing is the ability to swap
 joystick 1 & 2 with a button on the USB gamepad. This seems like it
