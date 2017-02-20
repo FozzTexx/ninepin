@@ -200,29 +200,7 @@ void joystickHandleIO(int fd)
     break;
 	
   case JS_EVENT_BUTTON:
-    if (js.number == 8) { /* Select button */
-      if (js.value)
-	newDrive = -1;
-      else if (button[8]) { /* Ignore fake button up at startup */
-	if (newDrive < 0)
-	  newDrive = dosCurrentDrive() ^ 1;
-	dosSwapDrive(newDrive);
-      }
-    }
-
     button[js.number] = js.value;
-
-    if (button[8]) {
-      if (button[0])
-	newDrive = 0;
-      if (button[1])
-	newDrive = 1;
-      if (button[2])
-	newDrive = 2;
-      if (button[3])
-	newDrive = 3;
-    }
-    
     break;
   }
 
@@ -249,42 +227,48 @@ void joystickHandleIO(int fd)
   output |= button[BUTTON_FIRERT] * APPLE_FIRE1;
   output |= button[BUTTON_FIRELF] * APPLE_FIRE1;
 
-  /* FIXME - debounce buttons/wait for up event */
-  
-  if (button[BUTTON_RSHTOP]) {
-    if (button[BUTTON_LSHBOT])
+  if (button[BUTTON_SELECT]) {
+    if (js.number >= 0 && js.number <= 3 && button[js.number]) {
+      newDrive = js.number;
+      dosSwapDrive(newDrive);
+    }
+
+    if (js.number == BUTTON_RSHTOP && button[BUTTON_RSHTOP])
       xmax -= 10;
-    if (button[BUTTON_RSHBOT])
+    if (js.number == BUTTON_RSHBOT && button[BUTTON_RSHBOT])
       xmax += 10;
     if (xmax < 0)
       xmax = 0;
     if (xmax > 255)
       xmax = 255;
-  }
-  if (button[BUTTON_LSHTOP]) {
-    if (button[BUTTON_LSHBOT])
+
+    if (js.number == BUTTON_LSHTOP && button[BUTTON_LSHTOP])
       ymax -= 10;
-    if (button[BUTTON_RSHBOT])
+    if (js.number == BUTTON_LSHBOT && button[BUTTON_LSHBOT])
       ymax += 10;
     if (ymax < 0)
       ymax = 0;
     if (ymax > 255)
       ymax = 255;
-  }
 
-  if (button[BUTTON_LSTICK]) {
-    if (button[BUTTON_SELECT])
-      wrap_x = !wrap_x;
-    else {
-      joy_mode = (joy_mode + 1) % modeMax; /* Cycle joy mode */
-      fprintf(stderr, "\nJoy mode: %i\n", joy_mode);
+    if (js.number == BUTTON_LSTICK && button[BUTTON_LSTICK]) {
+      if (button[BUTTON_START]) {
+	wrap_x = !wrap_x;
+	fprintf(stderr, "\nX-wrap: %i\n", wrap_x);
+      }
+      else {
+	joy_mode = (joy_mode + 1) % modeMax; /* Cycle joy mode */
+	fprintf(stderr, "\nJoy mode: %i\n", joy_mode);
+      }
     }
-  }
-  if (button[BUTTON_RSTICK]) {
-    if (button[BUTTON_SELECT])
-      wrap_y = !wrap_y;
-    else
-      yaxis ^= 2; /* Toggle between axis 1 and 3 */
+    if (js.number == BUTTON_RSTICK && button[BUTTON_RSTICK]) {
+      if (button[BUTTON_START]) {
+	wrap_y = !wrap_y;
+	fprintf(stderr, "\nY-wrap: %i\n", wrap_y);
+      }
+      else
+	yaxis ^= 2; /* Toggle between axis 1 and 3 */
+    }
   }
   
   if (output != joy_state) {

@@ -424,8 +424,10 @@ void dosHandleIO(int fd)
 
 void dosSwapDrive(int newDrive)
 {
-  curDrive = newDrive;
-  fprintf(stderr, "Swapping to drive %i\n", newDrive + 8);
+  if (curDrive != newDrive) {
+    curDrive = newDrive;
+    fprintf(stderr, "Swapping to drive %i\n", newDrive + 8);
+  }
   return;
 }
 
