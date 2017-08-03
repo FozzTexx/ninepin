@@ -26,6 +26,9 @@
 #define APPLE_FIRE0	ATARI_FIRE
 #define APPLE_FIRE1	ATARI_LEFT
 
+#define MSX_FIRE0	ATARI_FIRE
+#define MSX_FIRE1	0x20
+
 extern int initJoystick();
 extern void joystickHandleIO(int fd);
 

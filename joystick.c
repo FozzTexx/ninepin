@@ -60,6 +60,13 @@ typedef enum {
   modeMax
 } joyMode;
 
+const char *modeName[] = {
+  "Absolute",
+  "Relative",
+  "4-way",
+  NULL
+};
+
 typedef enum {
   outputDigital = 0,
   outputAnalog = 1
@@ -72,7 +79,8 @@ int xmax = 135, ymax = 160;
 //int xmax = 255, ymax = 255;
 int joy_state = 0;
 joyMode joy_mode = modeAbsolute;
-outputMode out_mode = outputAnalog;
+//outputMode out_mode = outputAnalog;
+outputMode out_mode = outputDigital;
 int yaxis = 1;
 int wrap_x = 0, wrap_y = 0;
 
@@ -141,6 +149,8 @@ int initJoystick()
 void calc4way(int xaxis, int yaxis, int *xpos, int *ypos)
 {
   double x, y, angle;
+  static double lastAngle = 0;
+  int between;
 
 
   x = xaxis;
@@ -152,6 +162,13 @@ void calc4way(int xaxis, int yaxis, int *xpos, int *ypos)
       angle = 180 - angle;
     if (y > 0)
       angle = 360 - angle;
+
+    between = (angle - 45) / 90;
+    between *= 90;
+    between += 45;
+    if (angle == between)
+      angle = lastAngle;
+    
     //fprintf(stderr, "\n%f %f %f\n", angle, x, y);
     if (angle < 45 || angle > (45 * 7)) {
       *xpos = 32767;
@@ -179,6 +196,7 @@ void calc4way(int xaxis, int yaxis, int *xpos, int *ypos)
     *ypos = 0;
   }
 
+  lastAngle = angle;
   return;
 }    
 
@@ -224,8 +242,14 @@ void joystickHandleIO(int fd)
 
   output |= button[BUTTON_FIRETP] * ATARI_FIRE;
   output |= button[BUTTON_FIREBT] * ATARI_FIRE;
-  output |= button[BUTTON_FIRERT] * APPLE_FIRE1;
-  output |= button[BUTTON_FIRELF] * APPLE_FIRE1;
+
+  if (out_mode == outputAnalog) {
+    output |= button[BUTTON_FIRERT] * APPLE_FIRE1;
+    output |= button[BUTTON_FIRELF] * APPLE_FIRE1;
+  }
+
+  output |= button[BUTTON_FIRERT] * MSX_FIRE1;
+  output |= button[BUTTON_FIRELF] * MSX_FIRE1;
 
   if (button[BUTTON_SELECT]) {
     if (js.number >= 0 && js.number <= 3 && button[js.number]) {
@@ -258,7 +282,7 @@ void joystickHandleIO(int fd)
       }
       else {
 	joy_mode = (joy_mode + 1) % modeMax; /* Cycle joy mode */
-	fprintf(stderr, "\nJoy mode: %i\n", joy_mode);
+	fprintf(stderr, "\nJoy mode: %s\n", modeName[joy_mode]);
       }
     }
     if (js.number == BUTTON_RSTICK && button[BUTTON_RSTICK]) {
@@ -287,6 +311,9 @@ void updatePaddles()
   static int x_accel = 0, y_accel = 0;
 
 
+  if (potx < 0 || poty < 0)
+    return;
+  
   switch (joy_mode) {
   case modeRelative:
     x_accel = calcAccel(axis[0]);
