@@ -1,4 +1,5 @@
 EESchema Schematic File Version 2
+LIBS:ninepin-circuit-rescue
 LIBS:power
 LIBS:device
 LIBS:transistors
@@ -141,7 +142,7 @@ U 1 1 54701FA5
 P 4250 6300
 F 0 "P3" H 4250 6750 50  0000 C CNN
 F 1 "SIO/IEC" V 4250 6300 50  0000 C CNN
-F 2 "Pin_Headers:Pin_Header_Straight_2x08" H 4250 5100 60  0001 C CNN
+F 2 "Pin_Headers:Pin_Header_Straight_2x08_Pitch2.54mm" H 4250 5100 60  0001 C CNN
 F 3 "" H 4250 5100 60  0000 C CNN
 	1    4250 6300
 	1    0    0    -1  
@@ -316,21 +317,21 @@ $EndComp
 Text Label 11300 3500 2    60   ~ 0
 Button_3
 Text Label 11800 3500 0    60   ~ 0
-Button_4
-Text Label 11800 3600 0    60   ~ 0
-Button_2
-Text Label 11800 3700 0    60   ~ 0
 Button_0
-Text Label 11300 3600 2    60   ~ 0
-Button_1
-Text Label 11300 3700 2    60   ~ 0
-Paddle_1
-Text Label 11300 3800 2    60   ~ 0
+Text Label 11800 3600 0    60   ~ 0
 Pvref
-Text Label 11800 3800 0    60   ~ 0
+Text Label 11800 3700 0    60   ~ 0
 Bcommon
-Text Label 11300 3900 2    60   ~ 0
+Text Label 11300 3600 2    60   ~ 0
+Button_4
+Text Label 11300 3700 2    60   ~ 0
+Button_1
+Text Label 11300 3800 2    60   ~ 0
+Button_2
+Text Label 11800 3800 0    60   ~ 0
 Paddle_0
+Text Label 11300 3900 2    60   ~ 0
+Paddle_1
 $Comp
 L VCC #PWR02
 U 1 1 57876FD9
@@ -487,7 +488,7 @@ U 1 1 5788346F
 P 1750 3150
 F 0 "P2" H 1750 4200 50  0000 C CNN
 F 1 "Raspberry Pi" V 1750 3150 50  0000 C CNN
-F 2 "Pin_Headers:Pin_Header_Angled_2x20" H 1750 2200 50  0001 C CNN
+F 2 "Pin_Headers:Pin_Header_Straight_2x20_Pitch2.54mm" H 1750 2200 50  0001 C CNN
 F 3 "" H 1750 2200 50  0000 C CNN
 	1    1750 3150
 	1    0    0    -1  
@@ -584,7 +585,7 @@ F 3 "" H 2350 1600 50  0000 C CNN
 	1    0    0    -1  
 $EndComp
 $Comp
-L AD5282 U3
+L AD5282-RESCUE-ninepin-circuit U3
 U 1 1 5788285E
 P 9700 3100
 F 0 "U3" H 9350 3850 50  0000 L CNN
@@ -623,7 +624,7 @@ U 1 1 5788955B
 P 8650 9900
 F 0 "C1" H 8675 10000 50  0000 L CNN
 F 1 ".1uf" H 8675 9800 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D3_P2.5" H 8688 9750 50  0001 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 8688 9750 50  0001 C CNN
 F 3 "" H 8650 9900 50  0000 C CNN
 	1    8650 9900
 	1    0    0    -1  
@@ -634,7 +635,7 @@ U 1 1 578895C5
 P 8900 9900
 F 0 "C2" H 8925 10000 50  0000 L CNN
 F 1 ".1uf" H 8925 9800 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D3_P2.5" H 8938 9750 50  0001 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 8938 9750 50  0001 C CNN
 F 3 "" H 8900 9900 50  0000 C CNN
 	1    8900 9900
 	1    0    0    -1  
@@ -645,7 +646,7 @@ U 1 1 57889626
 P 9150 9900
 F 0 "C3" H 9175 10000 50  0000 L CNN
 F 1 ".1uf" H 9175 9800 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D3_P2.5" H 9188 9750 50  0001 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 9188 9750 50  0001 C CNN
 F 3 "" H 9150 9900 50  0000 C CNN
 	1    9150 9900
 	1    0    0    -1  
@@ -656,7 +657,7 @@ U 1 1 57889689
 P 9400 9900
 F 0 "C4" H 9425 10000 50  0000 L CNN
 F 1 ".1uf" H 9425 9800 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D3_P2.5" H 9438 9750 50  0001 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 9438 9750 50  0001 C CNN
 F 3 "" H 9400 9900 50  0000 C CNN
 	1    9400 9900
 	1    0    0    -1  
@@ -667,7 +668,7 @@ U 1 1 5788975E
 P 9900 9900
 F 0 "C6" H 9925 10000 50  0000 L CNN
 F 1 ".1uf" H 9925 9800 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D3_P2.5" H 9938 9750 50  0001 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 9938 9750 50  0001 C CNN
 F 3 "" H 9900 9900 50  0000 C CNN
 	1    9900 9900
 	1    0    0    -1  
@@ -678,7 +679,7 @@ U 1 1 578897C7
 P 10150 9900
 F 0 "C7" H 10175 10000 50  0000 L CNN
 F 1 ".1uf" H 10175 9800 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D3_P2.5" H 10188 9750 50  0001 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 10188 9750 50  0001 C CNN
 F 3 "" H 10150 9900 50  0000 C CNN
 	1    10150 9900
 	1    0    0    -1  
@@ -689,7 +690,7 @@ U 1 1 57889FA4
 P 6350 5250
 F 0 "R5" V 6430 5250 50  0000 C CNN
 F 1 "10k" V 6350 5250 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 6280 5250 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 6280 5250 50  0001 C CNN
 F 3 "" H 6350 5250 50  0000 C CNN
 	1    6350 5250
 	1    0    0    -1  
@@ -700,7 +701,7 @@ U 1 1 578896F3
 P 9650 9900
 F 0 "C5" H 9675 10000 50  0000 L CNN
 F 1 ".1uf" H 9675 9800 50  0000 L CNN
-F 2 "Capacitors_ThroughHole:C_Disc_D3_P2.5" H 9688 9750 50  0001 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 9688 9750 50  0001 C CNN
 F 3 "" H 9650 9900 50  0000 C CNN
 	1    9650 9900
 	1    0    0    -1  
@@ -722,7 +723,7 @@ U 1 1 5788AFE0
 P 7150 5250
 F 0 "R10" V 7230 5250 50  0000 C CNN
 F 1 "10k" V 7150 5250 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 7080 5250 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 7080 5250 50  0001 C CNN
 F 3 "" H 7150 5250 50  0000 C CNN
 	1    7150 5250
 	1    0    0    -1  
@@ -733,7 +734,7 @@ U 1 1 5788B9C6
 P 6350 4550
 F 0 "R4" V 6430 4550 50  0000 C CNN
 F 1 "10k" V 6350 4550 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 6280 4550 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 6280 4550 50  0001 C CNN
 F 3 "" H 6350 4550 50  0000 C CNN
 	1    6350 4550
 	1    0    0    -1  
@@ -744,7 +745,7 @@ U 1 1 5788BA26
 P 7150 4550
 F 0 "R9" V 7230 4550 50  0000 C CNN
 F 1 "10k" V 7150 4550 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 7080 4550 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 7080 4550 50  0001 C CNN
 F 3 "" H 7150 4550 50  0000 C CNN
 	1    7150 4550
 	1    0    0    -1  
@@ -755,7 +756,7 @@ U 1 1 5788BA85
 P 7150 3850
 F 0 "R8" V 7230 3850 50  0000 C CNN
 F 1 "10k" V 7150 3850 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 7080 3850 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 7080 3850 50  0001 C CNN
 F 3 "" H 7150 3850 50  0000 C CNN
 	1    7150 3850
 	1    0    0    -1  
@@ -766,7 +767,7 @@ U 1 1 5788BAE6
 P 6350 3850
 F 0 "R3" V 6430 3850 50  0000 C CNN
 F 1 "10k" V 6350 3850 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 6280 3850 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 6280 3850 50  0001 C CNN
 F 3 "" H 6350 3850 50  0000 C CNN
 	1    6350 3850
 	1    0    0    -1  
@@ -777,7 +778,7 @@ U 1 1 5788BB4C
 P 6350 3150
 F 0 "R2" V 6430 3150 50  0000 C CNN
 F 1 "10k" V 6350 3150 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 6280 3150 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 6280 3150 50  0001 C CNN
 F 3 "" H 6350 3150 50  0000 C CNN
 	1    6350 3150
 	1    0    0    -1  
@@ -788,7 +789,7 @@ U 1 1 5788BBB2
 P 7150 3150
 F 0 "R7" V 7230 3150 50  0000 C CNN
 F 1 "10k" V 7150 3150 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 7080 3150 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 7080 3150 50  0001 C CNN
 F 3 "" H 7150 3150 50  0000 C CNN
 	1    7150 3150
 	1    0    0    -1  
@@ -799,7 +800,7 @@ U 1 1 5788BC19
 P 7150 2450
 F 0 "R6" V 7230 2450 50  0000 C CNN
 F 1 "10k" V 7150 2450 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 7080 2450 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 7080 2450 50  0001 C CNN
 F 3 "" H 7150 2450 50  0000 C CNN
 	1    7150 2450
 	1    0    0    -1  
@@ -810,7 +811,7 @@ U 1 1 5788BC84
 P 6350 2450
 F 0 "R1" V 6430 2450 50  0000 C CNN
 F 1 "10k" V 6350 2450 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 6280 2450 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 6280 2450 50  0001 C CNN
 F 3 "" H 6350 2450 50  0000 C CNN
 	1    6350 2450
 	1    0    0    -1  
@@ -840,7 +841,7 @@ U 1 1 57892760
 P 11550 3700
 F 0 "P4" H 11550 4000 50  0000 C CNN
 F 1 "Player1" H 11550 3400 50  0000 C CNN
-F 2 "Pin_Headers:Pin_Header_Angled_2x05" H 11550 2500 50  0001 C CNN
+F 2 "Pin_Headers:Pin_Header_Straight_2x05_Pitch2.54mm" H 11550 2500 50  0001 C CNN
 F 3 "" H 11550 2500 50  0000 C CNN
 	1    11550 3700
 	1    0    0    -1  
@@ -851,35 +852,35 @@ U 1 1 57892802
 P 11550 6050
 F 0 "P5" H 11550 6350 50  0000 C CNN
 F 1 "Player2" H 11550 5750 50  0000 C CNN
-F 2 "Pin_Headers:Pin_Header_Angled_2x05" H 11550 4850 50  0001 C CNN
+F 2 "Pin_Headers:Pin_Header_Straight_2x05_Pitch2.54mm" H 11550 4850 50  0001 C CNN
 F 3 "" H 11550 4850 50  0000 C CNN
 	1    11550 6050
 	1    0    0    -1  
 $EndComp
 Text Label 11800 6050 0    60   ~ 0
-Button_5
-Text Label 11800 5850 0    60   ~ 0
-Button_9
-Text Label 11800 5950 0    60   ~ 0
-Button_7
-Text Label 11800 6150 0    60   ~ 0
 Bcommon
+Text Label 11800 5850 0    60   ~ 0
+Button_5
+Text Label 11800 5950 0    60   ~ 0
+Pvref
+Text Label 11800 6150 0    60   ~ 0
+Paddle_2
 Text Label 11300 5850 2    60   ~ 0
 Button_8
 Text Label 11300 5950 2    60   ~ 0
-Button_6
+Button_9
 Text Label 11300 6050 2    60   ~ 0
-Paddle_3
+Button_6
 Text Label 11300 6150 2    60   ~ 0
-Pvref
+Button_7
 Text Label 11300 6250 2    60   ~ 0
-Paddle_2
+Paddle_3
 Text Label 11800 3900 0    60   ~ 0
 PGND
 Text Label 11800 6250 0    60   ~ 0
 PGND
 $Comp
-L AD5282 U4
+L AD5282-RESCUE-ninepin-circuit U4
 U 1 1 578828CD
 P 9700 7150
 F 0 "U4" H 9350 7900 50  0000 L CNN
@@ -891,23 +892,23 @@ F 3 "" H 9700 7150 50  0000 C CNN
 $EndComp
 NoConn ~ 10200 3500
 $Comp
-L MAX232 U10
+L MAX232-RESCUE-ninepin-circuit U10
 U 1 1 57938741
 P 2750 8000
 F 0 "U10" H 2300 8850 50  0000 L CNN
 F 1 "MAX3232" H 2950 8850 50  0000 L CNN
-F 2 "" H 2750 8000 50  0000 C CNN
+F 2 "Housings_SSOP:TSSOP-16_4.4x5mm_Pitch0.65mm" H 2750 8000 50  0001 C CNN
 F 3 "" H 2750 8000 50  0000 C CNN
 	1    2750 8000
 	1    0    0    -1  
 $EndComp
 $Comp
-L MAX232 U11
+L MAX232-RESCUE-ninepin-circuit U11
 U 1 1 579387C0
 P 5600 8000
 F 0 "U11" H 5150 8850 50  0000 L CNN
 F 1 "MAX3232" H 5800 8850 50  0000 L CNN
-F 2 "" H 5600 8000 50  0000 C CNN
+F 2 "Housings_SSOP:TSSOP-16_4.4x5mm_Pitch0.65mm" H 5600 8000 50  0001 C CNN
 F 3 "" H 5600 8000 50  0000 C CNN
 	1    5600 8000
 	1    0    0    -1  
@@ -918,7 +919,7 @@ U 1 1 57938E5B
 P 1950 7500
 F 0 "C8" H 1975 7600 50  0000 L CNN
 F 1 "0.1uf" H 1975 7400 50  0000 L CNN
-F 2 "" H 1988 7350 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 1988 7350 50  0001 C CNN
 F 3 "" H 1950 7500 50  0000 C CNN
 	1    1950 7500
 	1    0    0    -1  
@@ -929,7 +930,7 @@ U 1 1 57938EE4
 P 1950 8000
 F 0 "C9" H 1975 8100 50  0000 L CNN
 F 1 "0.1uf" H 1975 7900 50  0000 L CNN
-F 2 "" H 1988 7850 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 1988 7850 50  0001 C CNN
 F 3 "" H 1950 8000 50  0000 C CNN
 	1    1950 8000
 	1    0    0    -1  
@@ -940,7 +941,7 @@ U 1 1 57938F59
 P 4800 7500
 F 0 "C13" H 4825 7600 50  0000 L CNN
 F 1 "0.1uf" H 4825 7400 50  0000 L CNN
-F 2 "" H 4838 7350 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 4838 7350 50  0001 C CNN
 F 3 "" H 4800 7500 50  0000 C CNN
 	1    4800 7500
 	1    0    0    -1  
@@ -951,7 +952,7 @@ U 1 1 57938FD0
 P 4800 8000
 F 0 "C14" H 4825 8100 50  0000 L CNN
 F 1 "0.1uf" H 4825 7900 50  0000 L CNN
-F 2 "" H 4838 7850 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 4838 7850 50  0001 C CNN
 F 3 "" H 4800 8000 50  0000 C CNN
 	1    4800 8000
 	1    0    0    -1  
@@ -962,7 +963,7 @@ U 1 1 57939049
 P 3650 7300
 F 0 "C10" H 3675 7400 50  0000 L CNN
 F 1 "0.1uf" H 3675 7200 50  0000 L CNN
-F 2 "" H 3688 7150 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 3688 7150 50  0001 C CNN
 F 3 "" H 3650 7300 50  0000 C CNN
 	1    3650 7300
 	0    1    1    0   
@@ -973,7 +974,7 @@ U 1 1 579390C4
 P 3650 7700
 F 0 "C11" H 3675 7800 50  0000 L CNN
 F 1 "0.1uf" H 3675 7600 50  0000 L CNN
-F 2 "" H 3688 7550 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 3688 7550 50  0001 C CNN
 F 3 "" H 3650 7700 50  0000 C CNN
 	1    3650 7700
 	0    1    1    0   
@@ -984,7 +985,7 @@ U 1 1 57939141
 P 3650 8200
 F 0 "C12" H 3675 8300 50  0000 L CNN
 F 1 "0.1uf" H 3675 8100 50  0000 L CNN
-F 2 "" H 3688 8050 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 3688 8050 50  0001 C CNN
 F 3 "" H 3650 8200 50  0000 C CNN
 	1    3650 8200
 	0    1    1    0   
@@ -995,7 +996,7 @@ U 1 1 579391C9
 P 6500 7300
 F 0 "C15" H 6525 7400 50  0000 L CNN
 F 1 "0.1uf" H 6525 7200 50  0000 L CNN
-F 2 "" H 6538 7150 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 6538 7150 50  0001 C CNN
 F 3 "" H 6500 7300 50  0000 C CNN
 	1    6500 7300
 	0    1    1    0   
@@ -1006,7 +1007,7 @@ U 1 1 5793924A
 P 6500 7700
 F 0 "C16" H 6525 7800 50  0000 L CNN
 F 1 "0.1uf" H 6525 7600 50  0000 L CNN
-F 2 "" H 6538 7550 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 6538 7550 50  0001 C CNN
 F 3 "" H 6500 7700 50  0000 C CNN
 	1    6500 7700
 	0    1    1    0   
@@ -1017,7 +1018,7 @@ U 1 1 579392D2
 P 6500 8200
 F 0 "C17" H 6525 8300 50  0000 L CNN
 F 1 "0.1uf" H 6525 8100 50  0000 L CNN
-F 2 "" H 6538 8050 50  0000 C CNN
+F 2 "Capacitors_THT:C_Disc_D3.0mm_W2.0mm_P2.50mm" H 6538 8050 50  0001 C CNN
 F 3 "" H 6500 8200 50  0000 C CNN
 	1    6500 8200
 	0    1    1    0   
@@ -1042,7 +1043,7 @@ U 1 1 5793CDEA
 P 4250 9750
 F 0 "P6" H 4250 10050 50  0000 C CNN
 F 1 "RS232" H 4250 9450 50  0000 C CNN
-F 2 "" H 4250 8550 50  0000 C CNN
+F 2 "Pin_Headers:Pin_Header_Straight_2x05_Pitch2.54mm" H 4250 8550 50  0001 C CNN
 F 3 "" H 4250 8550 50  0000 C CNN
 	1    4250 9750
 	1    0    0    -1  
@@ -1120,106 +1121,23 @@ Wire Wire Line
 Wire Wire Line
 	8550 900  950  900 
 Wire Wire Line
-	12400 5850 11800 5850
-Wire Wire Line
-	12400 8150 12400 5850
-Wire Wire Line
-	10700 5850 11300 5850
-Wire Wire Line
-	10700 7550 10700 5850
-Wire Wire Line
-	13050 7550 10700 7550
-Wire Wire Line
-	12500 5950 11800 5950
-Wire Wire Line
-	12500 6950 12500 5950
-Wire Wire Line
-	13050 6950 12500 6950
-Wire Wire Line
-	10800 5950 11300 5950
-Wire Wire Line
-	10800 5650 10800 5950
-Wire Wire Line
-	12600 5650 10800 5650
+	10850 6950 13050 6950
 Wire Wire Line
 	12600 6350 12600 5650
 Wire Wire Line
 	13050 6350 12600 6350
 Wire Wire Line
-	12700 6050 11800 6050
+	12250 5750 13050 5750
 Wire Wire Line
-	12700 5750 12700 6050
+	10550 5100 13050 5100
 Wire Wire Line
-	13050 5750 12700 5750
-Wire Wire Line
-	12500 3500 11800 3500
-Wire Wire Line
-	12500 5100 12500 3500
-Wire Wire Line
-	13050 5100 12500 5100
-Wire Wire Line
-	10700 3500 11300 3500
-Wire Wire Line
-	10700 4500 10700 3500
-Wire Wire Line
-	13050 4500 10700 4500
-Wire Wire Line
-	12600 3600 11800 3600
-Wire Wire Line
-	12600 3900 12600 3600
+	10650 4500 13050 4500
 Wire Wire Line
 	13050 3900 12600 3900
 Wire Wire Line
-	10800 3600 11300 3600
+	12250 2700 13050 2700
 Wire Wire Line
-	10800 3300 10800 3600
-Wire Wire Line
-	13050 3300 10800 3300
-Wire Wire Line
-	12700 3700 11800 3700
-Wire Wire Line
-	12700 2700 12700 3700
-Wire Wire Line
-	13050 2700 12700 2700
-Connection ~ 12800 3750
-Wire Wire Line
-	12800 3800 12800 3750
-Wire Wire Line
-	11800 3800 12800 3800
-Wire Wire Line
-	12800 6150 12800 2300
-Wire Wire Line
-	11800 6150 12800 6150
-Wire Wire Line
-	10600 7150 10200 7150
-Wire Wire Line
-	10600 6050 10600 7150
-Wire Wire Line
-	11300 6050 10600 6050
-Wire Wire Line
-	10500 6650 10200 6650
-Wire Wire Line
-	10500 6250 10500 6650
-Wire Wire Line
-	11300 6250 10500 6250
-Wire Wire Line
-	10600 3100 10200 3100
-Wire Wire Line
-	10600 3700 10600 3100
-Wire Wire Line
-	11300 3700 10600 3700
-Wire Wire Line
-	10500 2600 10200 2600
-Wire Wire Line
-	10500 3900 10500 2600
-Wire Wire Line
-	11300 3900 10500 3900
-Connection ~ 10400 6150
-Wire Wire Line
-	11300 6150 10400 6150
-Connection ~ 10400 3800
-Wire Wire Line
-	11300 3800 10400 3800
+	10200 2600 12350 2600
 Connection ~ 10300 4100
 Wire Wire Line
 	12050 4100 10300 4100
@@ -1231,7 +1149,7 @@ Wire Wire Line
 	12050 6550 12050 6250
 Connection ~ 10400 6750
 Wire Wire Line
-	10400 7250 10200 7250
+	10200 7250 12300 7250
 Connection ~ 10400 3200
 Wire Wire Line
 	10400 6750 10200 6750
@@ -1246,7 +1164,7 @@ Wire Wire Line
 Wire Wire Line
 	10400 2700 10400 7250
 Wire Wire Line
-	10200 2700 10400 2700
+	10200 2700 12050 2700
 Wire Wire Line
 	10300 3000 10200 3000
 Wire Wire Line
@@ -1306,7 +1224,7 @@ Wire Wire Line
 Wire Wire Line
 	12050 6250 11800 6250
 Wire Wire Line
-	12400 8150 13050 8150
+	10650 8150 13050 8150
 Wire Wire Line
 	12800 2300 13750 2300
 Connection ~ 6350 2300
@@ -1925,7 +1843,7 @@ U 1 1 57B983F5
 P 1850 5300
 F 0 "U12" H 1850 5350 50  0000 C CNN
 F 1 "74LS08" H 1850 5250 50  0000 C CNN
-F 2 "" H 1850 5300 50  0000 C CNN
+F 2 "Housings_DIP:DIP-14_W7.62mm" H 1850 5300 50  0001 C CNN
 F 3 "" H 1850 5300 50  0000 C CNN
 	1    1850 5300
 	0    -1   -1   0   
@@ -1967,7 +1885,7 @@ U 1 1 57B9B386
 P 3550 3950
 F 0 "R11" V 3630 3950 50  0000 C CNN
 F 1 "10k" V 3550 3950 50  0000 C CNN
-F 2 "Resistors_ThroughHole:Resistor_Horizontal_RM7mm" V 3480 3950 50  0001 C CNN
+F 2 "Resistors_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal" V 3480 3950 50  0001 C CNN
 F 3 "" H 3550 3950 50  0000 C CNN
 	1    3550 3950
 	1    0    0    -1  
@@ -1980,4 +1898,93 @@ Connection ~ 1150 1900
 Wire Wire Line
 	3150 4100 3850 4100
 Connection ~ 3550 4100
+Wire Wire Line
+	11800 3700 12800 3700
+Connection ~ 12800 3700
+Wire Wire Line
+	12250 2700 12250 3500
+Wire Wire Line
+	12250 3500 11800 3500
+Wire Wire Line
+	11800 3800 12350 3800
+Wire Wire Line
+	12350 3800 12350 2600
+Wire Wire Line
+	11800 3600 12050 3600
+Wire Wire Line
+	12050 3600 12050 2700
+Connection ~ 10400 2700
+Wire Wire Line
+	13050 3300 10850 3300
+Wire Wire Line
+	10850 3300 10850 3700
+Wire Wire Line
+	10850 3700 11300 3700
+Wire Wire Line
+	12600 3900 12600 3200
+Wire Wire Line
+	12600 3200 10750 3200
+Wire Wire Line
+	10750 3200 10750 3800
+Wire Wire Line
+	10750 3800 11300 3800
+Wire Wire Line
+	10650 4500 10650 3500
+Wire Wire Line
+	10650 3500 11300 3500
+Wire Wire Line
+	10550 5100 10550 3600
+Wire Wire Line
+	10550 3600 11300 3600
+Wire Wire Line
+	10200 3100 11100 3100
+Wire Wire Line
+	11100 3100 11100 3900
+Wire Wire Line
+	11100 3900 11300 3900
+Wire Wire Line
+	12250 5750 12250 5850
+Wire Wire Line
+	12250 5850 11800 5850
+Wire Wire Line
+	12800 6050 11800 6050
+Wire Wire Line
+	12800 2300 12800 6050
+Wire Wire Line
+	11300 6050 10850 6050
+Wire Wire Line
+	10850 6050 10850 5650
+Wire Wire Line
+	10850 5650 12600 5650
+Wire Wire Line
+	10850 6950 10850 6150
+Wire Wire Line
+	10850 6150 11300 6150
+Wire Wire Line
+	13050 7550 10750 7550
+Wire Wire Line
+	10750 7550 10750 5850
+Wire Wire Line
+	10750 5850 11300 5850
+Wire Wire Line
+	11300 5950 10650 5950
+Wire Wire Line
+	10650 5950 10650 8150
+Wire Wire Line
+	11800 5950 12300 5950
+Wire Wire Line
+	12300 5950 12300 7250
+Connection ~ 10400 7250
+Wire Wire Line
+	10200 6650 12200 6650
+Wire Wire Line
+	12200 6650 12200 6150
+Wire Wire Line
+	12200 6150 11800 6150
+Wire Wire Line
+	11300 6250 11000 6250
+Wire Wire Line
+	11000 6250 11000 7150
+Wire Wire Line
+	11000 7150 10200 7150
 $EndSCHEMATC
