@@ -29,6 +29,8 @@
 #define MSX_FIRE0	ATARI_FIRE
 #define MSX_FIRE1	0x20
 
+#define ANALOG_INTERVAL	5000
+
 extern int initJoystick();
 extern void joystickHandleIO(int fd);
 

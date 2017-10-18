@@ -28,11 +28,13 @@
 #include <unistd.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 #define SREG_STORE	24
 #define SREG_SHIFT	23
 #define SREG_DATA	22
 
+#ifdef MADCATZ
 #define BUTTON_FIRETP	0
 #define BUTTON_FIRERT	1
 #define BUTTON_FIREBT	2
@@ -45,10 +47,25 @@
 #define BUTTON_SELECT	8
 #define BUTTON_LSTICK	10
 #define BUTTON_RSTICK	11
+#else /* XBOX360 */
+#define BUTTON_FIRETP	3
+#define BUTTON_FIRERT	1
+#define BUTTON_FIREBT	0
+#define BUTTON_FIRELF	2
+#define BUTTON_LSHTOP	4
+#define BUTTON_RSHTOP	5
+#define BUTTON_START	7
+#define BUTTON_SELECT	6
+#define BUTTON_LSTICK	9
+#define BUTTON_RSTICK	10
+#define BUTTON_XBOX	8
+#define BUTTON_HATUP	13
+#define BUTTON_HATRT	12
+#define BUTTON_HATDN	14
+#define BUTTON_HATLF	11
+#endif
 
 #define DEADZONE	16384
-
-#define calcAccel(x) ({int _x = x; _x / (160 / (1 + abs(_x) / 16384));})
 
 static int numAxes = 0, numButtons = 0;
 static int *axis, *button;
@@ -79,8 +96,8 @@ int xmax = 135, ymax = 160;
 //int xmax = 255, ymax = 255;
 int joy_state = 0;
 joyMode joy_mode = modeAbsolute;
-//outputMode out_mode = outputAnalog;
-outputMode out_mode = outputDigital;
+outputMode out_mode = outputAnalog;
+//outputMode out_mode = outputDigital;
 int yaxis = 1;
 int wrap_x = 0, wrap_y = 0;
 
@@ -257,19 +274,33 @@ void joystickHandleIO(int fd)
       dosSwapDrive(newDrive);
     }
 
+#ifdef BUTTON_RSHBOT
     if (js.number == BUTTON_RSHTOP && button[BUTTON_RSHTOP])
       xmax -= 10;
     if (js.number == BUTTON_RSHBOT && button[BUTTON_RSHBOT])
       xmax += 10;
+#else
+    if (js.number == BUTTON_HATLF && button[BUTTON_HATLF])
+      xmax -= 10;
+    if (js.number == BUTTON_HATRT && button[BUTTON_HATRT])
+      xmax += 10;
+#endif
     if (xmax < 0)
       xmax = 0;
     if (xmax > 255)
       xmax = 255;
 
+#ifdef BUTTON_LSHBOT
     if (js.number == BUTTON_LSHTOP && button[BUTTON_LSHTOP])
       ymax -= 10;
     if (js.number == BUTTON_LSHBOT && button[BUTTON_LSHBOT])
       ymax += 10;
+#else
+    if (js.number == BUTTON_HATUP && button[BUTTON_HATUP])
+      ymax -= 10;
+    if (js.number == BUTTON_HATDN && button[BUTTON_HATDN])
+      ymax += 10;
+#endif    
     if (ymax < 0)
       ymax = 0;
     if (ymax > 255)
@@ -303,16 +334,43 @@ void joystickHandleIO(int fd)
   return;
 }
 
+int calcAccel(int x)
+{
+  int accel, val = abs(x);
+  int sign = (x > 0) - (x < 0);
+  int zone = 32768 / 8;
+
+
+  accel = val / zone;
+  accel *= accel * 10;
+  return accel * sign;
+}
+
 void updatePaddles()
 {
   int xval, yval;
   char buf[20];
   static int xpos = 0, ypos = 0;
   static int x_accel = 0, y_accel = 0;
+  static unsigned long long nextUpdate = 0;
+  unsigned long long millis;
 
-
+  
   if (potx < 0 || poty < 0)
     return;
+
+  struct timespec spec;
+
+  clock_gettime(CLOCK_REALTIME, &spec);
+  millis = spec.tv_sec;
+  millis *= 1000;
+  millis += spec.tv_nsec / 1000000;
+  if (!nextUpdate)
+    nextUpdate = millis;
+
+  if (nextUpdate > millis)
+    return;
+  nextUpdate += ANALOG_INTERVAL / 1000;
   
   switch (joy_mode) {
   case modeRelative:

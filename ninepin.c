@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
       FD_SET(dosfd, &rd);
     ex = rd;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 10000;
+    timeout.tv_usec = ANALOG_INTERVAL;
     select(NOFILE, &rd, NULL, &ex, &timeout);
 
     if (FD_ISSET(joyfd, &rd))
@@ -66,7 +66,6 @@ int main(int argc, char *argv[])
     if (FD_ISSET(dosfd, &rd))
       dosHandleIO(dosfd);
 
-    /* FIXME - only update at regular intervals when in relative/acceleration mode */
     updatePaddles();
     
     if (FD_ISSET(joyfd, &ex)) {
