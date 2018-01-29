@@ -81,10 +81,17 @@ To unmount a .d64 disk image and use the native directory:
 
 Future plans include adding more CBM DOS capabilities. I also want to
 add supporting two joysticks and the ability to use the extra buttons
-on a USB gamepad for changing settings. Support for analog controls is
-also planned, but I want to support several different platforms which
-used varying pot sizes (1Meg on the 2600, 500k on the C64, 150k on the
-Apple II, and 100k on the IBM PC).
+on a USB gamepad for changing settings. I want to support several
+different platforms which used varying pot sizes (1Meg on the 2600,
+500k on the C64, 150k on the Apple II, and 100k on the IBM PC), but so
+far haven't found a suitable digital potentiometer. A 12-bit dual 1Meg
+would be ideal.
+
+Currently I'm using a 200k AD5282 which works fine for Apple II and
+IBM PC joysticks, as well as any system that uses a voltage divider
+such as the BBC Micro or TRS-80 Color Computer. Digital joystick mode
+has also been tested on MSX, VIC-20, Commodore 64, Sega Master, Atari
+2600, Commodore Amiga, Coleco Adam, and TI-99/4A.
 
 Another joystick feature that is missing is the ability to swap
 joystick 1 & 2 with a button on the USB gamepad. This seems like it
