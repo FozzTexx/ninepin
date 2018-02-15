@@ -985,4 +985,152 @@ Wire Wire Line
 	9600 7950 9600 7500
 Wire Wire Line
 	9600 7500 10900 7500
+Text Notes 13150 5300 0    60   ~ 0
+MSX
+$Comp
+L CONN_02X05 J?
+U 1 1 5A845C4A
+P 13300 5700
+F 0 "J?" H 13300 6000 50  0000 C CNN
+F 1 "CONN_02X05" H 13300 5400 50  0000 C CNN
+F 2 "" H 13300 4500 50  0001 C CNN
+F 3 "" H 13300 4500 50  0001 C CNN
+	1    13300 5700
+	1    0    0    -1  
+$EndComp
+Text Label 13050 5500 2    60   ~ 0
+Button_3
+Text Label 13050 5600 2    60   ~ 0
+Button_4
+Text Label 13050 5700 2    60   ~ 0
+Button_1
+Text Label 13050 5800 2    60   ~ 0
+Button_2
+Text Label 13050 5900 2    60   ~ 0
+Paddle_1
+Text Label 13550 5500 0    60   ~ 0
+Button_0
+Text Label 13550 5600 0    60   ~ 0
+Pvref
+Text Label 13550 5700 0    60   ~ 0
+Bcommon
+Text Label 13550 5800 0    60   ~ 0
+Paddle_0
+$Comp
+L CONN_02X05 J?
+U 1 1 5A845C59
+P 13300 6450
+F 0 "J?" H 13300 6750 50  0000 C CNN
+F 1 "CONN_02X05" H 13300 6150 50  0000 C CNN
+F 2 "" H 13300 5250 50  0001 C CNN
+F 3 "" H 13300 5250 50  0001 C CNN
+	1    13300 6450
+	1    0    0    -1  
+$EndComp
+Text Label 13050 6250 2    60   ~ 0
+Button_8
+Text Label 13050 6350 2    60   ~ 0
+Button_9
+Text Label 13050 6450 2    60   ~ 0
+Button_6
+Text Label 13050 6550 2    60   ~ 0
+Button_7
+Text Label 13050 6650 2    60   ~ 0
+Paddle_3
+Text Label 13550 6250 0    60   ~ 0
+Button_5
+Text Label 13550 6350 0    60   ~ 0
+Pvref
+Text Label 13550 6450 0    60   ~ 0
+Bcommon
+Text Label 13550 6550 0    60   ~ 0
+Paddle_2
+$Comp
+L DB9_FEMALE J?
+U 1 1 5A845C68
+P 13300 8250
+F 0 "J?" H 13300 8800 50  0000 C CNN
+F 1 "DB9_FEMALE" H 13300 7675 50  0000 C CNN
+F 2 "" H 13300 8250 50  0001 C CNN
+F 3 "" H 13300 8250 50  0001 C CNN
+	1    13300 8250
+	0    1    1    0   
+$EndComp
+Text Label 13700 7950 1    60   ~ 0
+Up
+Text Label 13600 7950 1    60   ~ 0
+Button_1
+Text Label 13500 7950 1    60   ~ 0
+Down
+Text Label 13400 7950 1    60   ~ 0
+Button_2
+Text Label 13300 7950 1    60   ~ 0
+Left
+Text Label 13200 7950 1    60   ~ 0
+Output
+Text Label 13100 7950 1    60   ~ 0
+Right
+Text Label 13000 7950 1    60   ~ 0
+GND
+Text Label 12900 7950 1    60   ~ 0
++5V
+Wire Wire Line
+	12550 7300 13100 7300
+Wire Wire Line
+	13100 7300 13100 7950
+Wire Wire Line
+	12500 7350 13300 7350
+Wire Wire Line
+	13300 7350 13300 7950
+Wire Wire Line
+	12450 7400 13500 7400
+Wire Wire Line
+	13500 7400 13500 7950
+Wire Wire Line
+	12400 7450 13700 7450
+Wire Wire Line
+	13700 7450 13700 7950
+Wire Wire Line
+	14600 7700 13600 7700
+Wire Wire Line
+	13600 7700 13600 7950
+Wire Wire Line
+	13550 5500 14600 5500
+Wire Wire Line
+	13550 5700 14050 5700
+Wire Wire Line
+	12400 5500 13050 5500
+Wire Wire Line
+	12550 7300 12550 5800
+Wire Wire Line
+	12550 5800 13050 5800
+Wire Wire Line
+	12500 7350 12500 5700
+Wire Wire Line
+	12500 5700 13050 5700
+Wire Wire Line
+	12450 7400 12450 5600
+Wire Wire Line
+	12450 5600 13050 5600
+Wire Wire Line
+	12400 7450 12400 5500
+Wire Wire Line
+	14050 5700 14050 7600
+Wire Wire Line
+	14300 6250 14300 7500
+Wire Wire Line
+	14300 6250 13550 6250
+Wire Wire Line
+	14600 5500 14600 7700
+Wire Wire Line
+	13550 6450 14050 6450
+Connection ~ 14050 6450
+Wire Wire Line
+	14050 7600 13000 7600
+Wire Wire Line
+	13000 7600 13000 7950
+Wire Wire Line
+	14300 7500 13400 7500
+Wire Wire Line
+	13400 7500 13400 7950
 $EndSCHEMATC
